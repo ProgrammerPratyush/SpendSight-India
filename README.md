@@ -86,6 +86,19 @@ Every working Indian generates 40–80 financial transactions per month across U
 
 <img width="1536" height="1024" alt="Architecture diagram 2026" src="https://github.com/user-attachments/assets/8dcd348b-fa09-4fbb-a801-7c5083ce0f52" />
 
+## 🏗️ Architecture Philosophy
+
+SpendSight follows a modular monorepo architecture separating mobile application logic, backend APIs, and infrastructure concerns into independently scalable domains.
+
+Key architectural goals:
+- Privacy-first transaction processing
+- Modular backend services
+- Offline-capable mobile workflows
+- Secure authentication & encrypted local storage
+- Scalable analytics and insights pipeline
+- CI/CD-driven deployment workflow
+```
+
 
 ## Project Structure
 
