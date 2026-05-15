@@ -1,0 +1,40 @@
+# ── Dependencies ──────────────────────────────────────────────────────────────
+node_modules/
+.expo/
+.expo-shared/
+
+# ── Environment files — NEVER commit these ────────────────────────────────────
+.env
+.env.local
+.env.development
+.env.production
+.env.staging
+apps/api/.env*
+apps/mobile/.env*
+!apps/api/.env.example
+!apps/mobile/.env.example
+
+# ── Firebase — service account keys ──────────────────────────────────────────
+*-service-account.json
+*-adminsdk-*.json
+google-services.json
+GoogleService-Info.plist
+
+# ── Build outputs ─────────────────────────────────────────────────────────────
+dist/
+build/
+*.apk
+*.ipa
+*.aab
+
+# ── OS files ──────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.log
+
+# ── IDE ───────────────────────────────────────────────────────────────────────
+.vscode/settings.json
+.idea/
+
+# ── TypeScript ────────────────────────────────────────────────────────────────
+*.tsbuildinfo
