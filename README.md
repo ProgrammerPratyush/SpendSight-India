@@ -97,7 +97,6 @@ Key architectural goals:
 - Secure authentication & encrypted local storage
 - Scalable analytics and insights pipeline
 - CI/CD-driven deployment workflow
-```
 
 
 ## Project Structure
@@ -274,7 +273,3 @@ MIT — see [LICENSE](LICENSE)
 <div align="center">
 Built with care for Indian users · Privacy-first · No bank linking required
 </div>
-
-
-## Architecture
-
