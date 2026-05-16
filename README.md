@@ -86,37 +86,54 @@ Every working Indian generates 40–80 financial transactions per month across U
 
 <img width="1536" height="1024" alt="Architecture diagram 2026" src="https://github.com/user-attachments/assets/8dcd348b-fa09-4fbb-a801-7c5083ce0f52" />
 
+## 🏗️ Architecture Philosophy
+
+SpendSight follows a modular monorepo architecture separating mobile application logic, backend APIs, and infrastructure concerns into independently scalable domains.
+
+Key architectural goals:
+- Privacy-first transaction processing
+- Modular backend services
+- Offline-capable mobile workflows
+- Secure authentication & encrypted local storage
+- Scalable analytics and insights pipeline
+- CI/CD-driven deployment workflow
+
 
 ## Project Structure
 
+```bash
 spendsight/
 ├── apps/
-│   ├── api/                    # Node.js + Express backend
+│   ├── api/                          # Node.js + Express backend
 │   │   ├── src/
-│   │   │   ├── routes/         # Auth, transactions, budgets, insights
-│   │   │   ├── models/         # Mongoose schemas
-│   │   │   ├── middleware/     # Auth, error handler, rate limiter
-│   │   │   ├── services/       # Category classifier, insight engine
-│   │   │   └── utils/          # Logger, encryption, validators
+│   │   │   ├── routes/               # Auth, transactions, budgets, insights
+│   │   │   ├── models/               # MongoDB / Mongoose schemas
+│   │   │   ├── middleware/           # Authentication, rate limiting, error handling
+│   │   │   ├── services/             # Classification engine, analytics, business logic
+│   │   │   └── utils/                # Logger, encryption, validators, helpers
 │   │   └── package.json
-│   └── mobile/                 # React Native (Expo)
+│   │
+│   └── mobile/                       # React Native (Expo) mobile application
 │       ├── src/
-│       │   ├── screens/        # All app screens
-│       │   ├── components/     # Reusable UI components
-│       │   ├── hooks/          # useTransactions, useInsights, useBudget
-│       │   ├── store/          # Zustand state slices
-│       │   ├── services/       # API client, Firebase, SMS parser
-│       │   └── utils/          # Theme, formatCurrency, dateHelpers
+│       │   ├── screens/              # Application screens & navigation flows
+│       │   ├── components/           # Reusable UI components
+│       │   ├── hooks/                # Custom hooks (transactions, insights, budgets)
+│       │   ├── store/                # Zustand global state management
+│       │   ├── services/             # API client, Firebase, SMS parser integrations
+│       │   └── utils/                # Theme system, currency/date helpers
 │       └── package.json
+│
 ├── docs/
-│   ├── ARCHITECTURE.md
-│   ├── API.md
-│   └── SECURITY.md
+│   ├── ARCHITECTURE.md               # High-level system design & architecture
+│   ├── API.md                        # REST API documentation
+│   └── SECURITY.md                   # Security model & privacy considerations
+│
 ├── .github/
 │   └── workflows/
-│       └── ci.yml
+│       └── ci.yml                    # GitHub Actions CI/CD pipeline
+│
 └── README.md
-
+```
 
 ---
 
@@ -256,7 +273,3 @@ MIT — see [LICENSE](LICENSE)
 <div align="center">
 Built with care for Indian users · Privacy-first · No bank linking required
 </div>
-
-
-## Architecture
-
