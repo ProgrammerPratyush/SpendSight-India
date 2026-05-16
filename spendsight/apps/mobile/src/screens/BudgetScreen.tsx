@@ -12,11 +12,17 @@ import {
   RefreshControl,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { colors, fontSize, spacing, radius, shadow } from "../utils/theme";
+import {
+  colors,
+  font,
+  fontSize,
+  spacing,
+  radius,
+  shadow,
+} from "../utils/theme";
 import { formatCurrency } from "../utils/formatCurrency";
 import { useBudget } from "../hooks/useBudget";
 import { useTransactions } from "../hooks/useTransactions";
-import apiClient from "../services/apiClient";
 
 export default function BudgetScreen() {
   const { budgets, isLoading, fetchBudgets, createBudget, deleteBudget } =
@@ -39,6 +45,12 @@ export default function BudgetScreen() {
     setRefreshing(false);
   }
 
+  function openModal() {
+    setLimitAmount("");
+    setAlertAt("80");
+    setShowModal(true);
+  }
+
   async function handleSave() {
     const amount = parseFloat(limitAmount);
     if (!amount || amount <= 0) {
@@ -55,54 +67,51 @@ export default function BudgetScreen() {
     setSaving(false);
     if (result.success) {
       setShowModal(false);
-      setLimitAmount("");
     } else {
-      Alert.alert("Error", "Could not save budget.");
+      Alert.alert("Error", "Could not save budget. Please try again.");
     }
   }
 
-  async function handleDelete(id: string) {
-    Alert.alert("Delete Budget", "Remove this budget?", [
+  async function handleDelete(id: string, name: string) {
+    Alert.alert(`Delete Budget`, `Remove "${name}" budget?`, [
       { text: "Cancel", style: "cancel" },
       {
         text: "Delete",
         style: "destructive",
-        onPress: async () => {
-          await deleteBudget(id);
-        },
+        onPress: () => deleteBudget(id),
       },
     ]);
   }
 
-  function getBudgetProgress(budget: any) {
+  function getProgress(budget: any) {
     const spent = totals.spent;
     const limit = budget.limitAmount;
-    const pct = Math.min((spent / limit) * 100, 100);
-    return { spent, pct };
+    const pct = limit > 0 ? Math.min((spent / limit) * 100, 100) : 0;
+    const remaining = limit - spent;
+    return { spent, pct, remaining };
   }
 
-  function getProgressColor(pct: number) {
+  function progressColor(pct: number) {
     if (pct >= 100) return colors.danger;
     if (pct >= 80) return colors.warning;
-    return colors.success;
+    return colors.accent;
   }
 
   return (
     <SafeAreaView style={styles.container}>
+      {/* Header */}
       <View style={styles.header}>
         <View>
           <Text style={styles.title}>Budget</Text>
           <Text style={styles.subtitle}>Set limits, stay in control</Text>
         </View>
-        <TouchableOpacity
-          style={styles.addBtn}
-          onPress={() => setShowModal(true)}
-        >
-          <Text style={styles.addBtnText}>+ New</Text>
+        <TouchableOpacity style={styles.newBtn} onPress={openModal}>
+          <Text style={styles.newBtnText}>+ New</Text>
         </TouchableOpacity>
       </View>
 
       <ScrollView
+        contentContainerStyle={styles.scrollContent}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -110,50 +119,68 @@ export default function BudgetScreen() {
             tintColor={colors.primary}
           />
         }
-        contentContainerStyle={{
-          padding: spacing.screenPadding,
-          gap: spacing.md,
-          paddingBottom: 100,
-        }}
       >
-        {isLoading ? (
+        {isLoading && !refreshing ? (
           <ActivityIndicator color={colors.primary} style={{ marginTop: 60 }} />
         ) : budgets.length === 0 ? (
-          <View style={styles.empty}>
+          <View style={[styles.emptyCard, shadow.card]}>
             <Text style={styles.emptyIcon}>🎯</Text>
-            <Text style={styles.emptyText}>No budgets set yet</Text>
-            <Text style={styles.emptySubText}>
-              Tap + New to set your first monthly budget
+            <Text style={styles.emptyTitle}>No budgets yet</Text>
+            <Text style={styles.emptySub}>
+              Set a monthly limit to stay on track with your spending.
             </Text>
             <TouchableOpacity
               style={[styles.emptyBtn, shadow.card]}
-              onPress={() => setShowModal(true)}
+              onPress={openModal}
             >
-              <Text style={styles.emptyBtnText}>Set a Budget</Text>
+              <Text style={styles.emptyBtnText}>Set Your First Budget</Text>
             </TouchableOpacity>
           </View>
         ) : (
           budgets.map((budget) => {
-            const { spent, pct } = getBudgetProgress(budget);
-            const progressColor = getProgressColor(pct);
-            const remaining = budget.limitAmount - spent;
+            const { spent, pct, remaining } = getProgress(budget);
+            const color = progressColor(pct);
+            const label = budget.categoryId
+              ? (budget.categoryId as any).name
+              : "Total Monthly Budget";
 
             return (
               <View key={budget._id} style={[styles.budgetCard, shadow.card]}>
+                {/* Top row */}
                 <View style={styles.budgetTop}>
-                  <View>
-                    <Text style={styles.budgetLabel}>
-                      {budget.categoryId
-                        ? budget.categoryId.name
-                        : "Total Monthly Budget"}
-                    </Text>
-                    <Text style={styles.budgetPeriod}>
-                      {budget.period} · Alert at {budget.alertAt}%
+                  <View style={styles.budgetLabelWrap}>
+                    <Text style={styles.budgetLabel}>{label}</Text>
+                    <Text style={styles.budgetMeta}>
+                      Monthly · Alert at {budget.alertAt}%
                     </Text>
                   </View>
-                  <TouchableOpacity onPress={() => handleDelete(budget._id)}>
-                    <Text style={styles.deleteBtn}>✕</Text>
+                  <TouchableOpacity
+                    style={styles.deleteIconBtn}
+                    onPress={() => handleDelete(budget._id, label)}
+                  >
+                    <Text style={styles.deleteIcon}>✕</Text>
                   </TouchableOpacity>
+                </View>
+
+                {/* Big numbers */}
+                <View style={styles.budgetAmounts}>
+                  <View>
+                    <Text style={styles.budgetLimitLabel}>BUDGET LIMIT</Text>
+                    <Text style={styles.budgetLimitValue}>
+                      {formatCurrency(budget.limitAmount)}
+                    </Text>
+                  </View>
+                  <View style={{ alignItems: "flex-end" }}>
+                    <Text style={styles.budgetSpentLabel}>SPENT SO FAR</Text>
+                    <Text
+                      style={[
+                        styles.budgetSpentValue,
+                        { color: pct >= 80 ? color : colors.textPrimary },
+                      ]}
+                    >
+                      {formatCurrency(spent)}
+                    </Text>
+                  </View>
                 </View>
 
                 {/* Progress bar */}
@@ -163,16 +190,15 @@ export default function BudgetScreen() {
                       styles.progressFill,
                       {
                         width: `${pct}%` as any,
-                        backgroundColor: progressColor,
+                        backgroundColor: color,
                       },
                     ]}
                   />
                 </View>
 
+                {/* Bottom row */}
                 <View style={styles.budgetBottom}>
-                  <Text style={styles.spentText}>
-                    {formatCurrency(spent)} spent
-                  </Text>
+                  <Text style={styles.pctText}>{Math.round(pct)}% used</Text>
                   <Text
                     style={[
                       styles.remainingText,
@@ -180,16 +206,29 @@ export default function BudgetScreen() {
                     ]}
                   >
                     {remaining < 0
-                      ? `${formatCurrency(Math.abs(remaining))} over`
-                      : `${formatCurrency(remaining)} left`}
+                      ? `${formatCurrency(Math.abs(remaining))} over budget`
+                      : `${formatCurrency(remaining)} remaining`}
                   </Text>
                 </View>
 
-                <Text style={styles.limitText}>
-                  Limit: {formatCurrency(budget.limitAmount)}
-                  {" · "}
-                  {Math.round(pct)}% used
-                </Text>
+                {/* Alert bar */}
+                {pct >= budget.alertAt && (
+                  <View
+                    style={[
+                      styles.alertBar,
+                      {
+                        backgroundColor:
+                          pct >= 100 ? colors.dangerLight : colors.warningLight,
+                      },
+                    ]}
+                  >
+                    <Text style={styles.alertBarText}>
+                      {pct >= 100
+                        ? "⚠️ You have exceeded your budget"
+                        : `⚠️ You are at ${Math.round(pct)}% of your budget`}
+                    </Text>
+                  </View>
+                )}
               </View>
             );
           })
@@ -210,17 +249,20 @@ export default function BudgetScreen() {
             <Text style={styles.modalTitle}>New Budget</Text>
             <TouchableOpacity onPress={handleSave} disabled={saving}>
               {saving ? (
-                <ActivityIndicator color={colors.primary} />
+                <ActivityIndicator color={colors.primary} size="small" />
               ) : (
                 <Text style={styles.modalSave}>Save</Text>
               )}
             </TouchableOpacity>
           </View>
 
-          <ScrollView style={styles.modalContent}>
-            <Text style={styles.modalLabel}>Monthly limit (Rs)</Text>
-            <View style={styles.amountWrap}>
-              <Text style={styles.amountPrefix}>Rs</Text>
+          <ScrollView
+            style={styles.modalContent}
+            keyboardShouldPersistTaps="handled"
+          >
+            <Text style={styles.modalSectionLabel}>MONTHLY LIMIT (₹)</Text>
+            <View style={styles.amountRow}>
+              <Text style={styles.rupeeSign}>₹</Text>
               <TextInput
                 style={styles.amountInput}
                 placeholder="10,000"
@@ -232,7 +274,7 @@ export default function BudgetScreen() {
               />
             </View>
 
-            <Text style={styles.modalLabel}>Alert me when I reach (%)</Text>
+            <Text style={styles.modalSectionLabel}>ALERT ME WHEN I REACH</Text>
             <View style={styles.alertRow}>
               {["60", "70", "80", "90"].map((val) => (
                 <TouchableOpacity
@@ -257,8 +299,12 @@ export default function BudgetScreen() {
 
             <View style={styles.infoBox}>
               <Text style={styles.infoText}>
-                💡 You will get a notification when your spending reaches{" "}
-                {alertAt}% of Rs {limitAmount || "0"} this month.
+                💡 You will receive a notification when your spending reaches{" "}
+                {alertAt}% of{" "}
+                {limitAmount
+                  ? `₹${parseFloat(limitAmount).toLocaleString("en-IN")}`
+                  : "your budget"}{" "}
+                this month.
               </Text>
             </View>
           </ScrollView>
@@ -270,125 +316,216 @@ export default function BudgetScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
+
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    padding: spacing.screenPadding,
+    paddingHorizontal: spacing.screenPadding,
+    paddingVertical: spacing.md,
     backgroundColor: colors.cardBackground,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
   title: {
-    fontSize: fontSize.xxl,
-    fontWeight: "800",
+    fontFamily: font.extrabold,
+    fontSize: 28,
     color: colors.textPrimary,
   },
   subtitle: {
-    fontSize: fontSize.xs,
+    fontFamily: font.regular,
+    fontSize: fontSize.sm,
     color: colors.textSecondary,
     marginTop: 2,
   },
-  addBtn: {
+  newBtn: {
     backgroundColor: colors.primary,
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm,
-    borderRadius: radius.md,
+    borderRadius: radius.full,
   },
-  addBtnText: { color: "#FFFFFF", fontWeight: "700", fontSize: fontSize.sm },
-  empty: { alignItems: "center", paddingTop: 80, gap: spacing.sm },
-  emptyIcon: { fontSize: 48 },
-  emptyText: {
-    fontSize: fontSize.lg,
-    fontWeight: "700",
+  newBtnText: {
+    fontFamily: font.bold,
+    fontSize: fontSize.md,
+    color: "#FFFFFF",
+  },
+
+  scrollContent: {
+    padding: spacing.screenPadding,
+    gap: spacing.md,
+    paddingBottom: 100,
+  },
+
+  // Empty state
+  emptyCard: {
+    backgroundColor: colors.cardBackground,
+    borderRadius: radius.xl,
+    padding: spacing.xl,
+    alignItems: "center",
+    gap: spacing.sm,
+    marginTop: spacing.xl,
+  },
+  emptyIcon: { fontSize: 56 },
+  emptyTitle: {
+    fontFamily: font.bold,
+    fontSize: fontSize.xl,
     color: colors.textPrimary,
   },
-  emptySubText: {
-    fontSize: fontSize.sm,
-    color: colors.textMuted,
+  emptySub: {
+    fontFamily: font.regular,
+    fontSize: fontSize.md,
+    color: colors.textSecondary,
     textAlign: "center",
+    lineHeight: 22,
   },
   emptyBtn: {
-    marginTop: spacing.md,
+    marginTop: spacing.sm,
     backgroundColor: colors.primary,
     paddingHorizontal: spacing.xl,
     paddingVertical: spacing.md,
-    borderRadius: radius.lg,
+    borderRadius: radius.full,
   },
-  emptyBtnText: { color: "#FFFFFF", fontWeight: "700", fontSize: fontSize.md },
+  emptyBtnText: {
+    fontFamily: font.bold,
+    fontSize: fontSize.md,
+    color: "#FFFFFF",
+  },
+
+  // Budget card
   budgetCard: {
     backgroundColor: colors.cardBackground,
-    borderRadius: radius.lg,
-    padding: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    gap: spacing.sm,
+    borderRadius: radius.xl,
+    padding: spacing.lg,
+    gap: spacing.md,
   },
   budgetTop: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
   },
+  budgetLabelWrap: { flex: 1 },
   budgetLabel: {
-    fontSize: fontSize.md,
-    fontWeight: "700",
+    fontFamily: font.bold,
+    fontSize: fontSize.lg,
     color: colors.textPrimary,
   },
-  budgetPeriod: {
+  budgetMeta: {
+    fontFamily: font.regular,
     fontSize: fontSize.xs,
     color: colors.textMuted,
     marginTop: 2,
   },
-  deleteBtn: {
-    color: colors.textMuted,
+  deleteIconBtn: { padding: spacing.xs },
+  deleteIcon: {
     fontSize: fontSize.lg,
-    padding: spacing.xs,
+    color: colors.textMuted,
   },
+
+  budgetAmounts: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-end",
+  },
+  budgetLimitLabel: {
+    fontFamily: font.bold,
+    fontSize: fontSize.xs,
+    color: colors.textMuted,
+    letterSpacing: 0.5,
+    marginBottom: 4,
+  },
+  budgetLimitValue: {
+    fontFamily: font.extrabold,
+    fontSize: 28,
+    color: colors.textPrimary,
+  },
+  budgetSpentLabel: {
+    fontFamily: font.bold,
+    fontSize: fontSize.xs,
+    color: colors.textMuted,
+    letterSpacing: 0.5,
+    marginBottom: 4,
+    textAlign: "right",
+  },
+  budgetSpentValue: {
+    fontFamily: font.extrabold,
+    fontSize: 28,
+    color: colors.textPrimary,
+  },
+
   progressBg: {
     height: 10,
     backgroundColor: colors.borderLight,
     borderRadius: radius.full,
     overflow: "hidden",
   },
-  progressFill: { height: "100%", borderRadius: radius.full },
-  budgetBottom: { flexDirection: "row", justifyContent: "space-between" },
-  spentText: {
-    fontSize: fontSize.sm,
-    color: colors.textSecondary,
-    fontWeight: "500",
+  progressFill: {
+    height: "100%",
+    borderRadius: radius.full,
   },
-  remainingText: { fontSize: fontSize.sm, fontWeight: "700" },
-  limitText: { fontSize: fontSize.xs, color: colors.textMuted },
+
+  budgetBottom: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  pctText: {
+    fontFamily: font.medium,
+    fontSize: fontSize.sm,
+    color: colors.textMuted,
+  },
+  remainingText: {
+    fontFamily: font.bold,
+    fontSize: fontSize.sm,
+  },
+
+  alertBar: {
+    borderRadius: radius.md,
+    padding: spacing.sm,
+  },
+  alertBarText: {
+    fontFamily: font.semibold,
+    fontSize: fontSize.sm,
+    color: colors.textPrimary,
+  },
+
+  // Modal
   modal: { flex: 1, backgroundColor: colors.background },
   modalHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    padding: spacing.screenPadding,
+    paddingHorizontal: spacing.screenPadding,
+    paddingVertical: spacing.md,
+    backgroundColor: colors.cardBackground,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
-    backgroundColor: colors.cardBackground,
   },
-  modalCancel: { color: colors.textSecondary, fontSize: fontSize.md },
+  modalCancel: {
+    fontFamily: font.regular,
+    fontSize: fontSize.md,
+    color: colors.textSecondary,
+  },
   modalTitle: {
+    fontFamily: font.bold,
     fontSize: fontSize.lg,
-    fontWeight: "700",
     color: colors.textPrimary,
   },
   modalSave: {
-    color: colors.primary,
+    fontFamily: font.bold,
     fontSize: fontSize.md,
-    fontWeight: "700",
+    color: colors.primary,
   },
   modalContent: { padding: spacing.screenPadding },
-  modalLabel: {
-    fontSize: fontSize.sm,
-    fontWeight: "600",
-    color: colors.textSecondary,
+  modalSectionLabel: {
+    fontFamily: font.bold,
+    fontSize: fontSize.xs,
+    color: colors.textMuted,
+    letterSpacing: 0.8,
     marginBottom: spacing.sm,
-    marginTop: spacing.md,
+    marginTop: spacing.lg,
   },
-  amountWrap: {
+
+  amountRow: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: colors.cardBackground,
@@ -397,22 +534,32 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: colors.primary,
     gap: spacing.sm,
+    marginBottom: spacing.md,
   },
-  amountPrefix: { fontSize: 28, fontWeight: "800", color: colors.primary },
+  rupeeSign: {
+    fontFamily: font.extrabold,
+    fontSize: 32,
+    color: colors.primary,
+  },
   amountInput: {
     flex: 1,
-    fontSize: 36,
-    fontWeight: "800",
+    fontFamily: font.extrabold,
+    fontSize: 40,
     color: colors.textPrimary,
   },
-  alertRow: { flexDirection: "row", gap: spacing.sm },
+
+  alertRow: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
   alertChip: {
     flex: 1,
     padding: spacing.md,
     borderRadius: radius.md,
     alignItems: "center",
     backgroundColor: colors.cardBackground,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: colors.border,
   },
   alertChipActive: {
@@ -420,13 +567,13 @@ const styles = StyleSheet.create({
     borderColor: colors.primary,
   },
   alertChipText: {
+    fontFamily: font.bold,
     fontSize: fontSize.md,
-    fontWeight: "600",
     color: colors.textSecondary,
   },
   alertChipTextActive: { color: "#FFFFFF" },
+
   infoBox: {
-    marginTop: spacing.lg,
     backgroundColor: "#EFF6FF",
     padding: spacing.md,
     borderRadius: radius.lg,
@@ -434,6 +581,7 @@ const styles = StyleSheet.create({
     borderLeftColor: colors.primary,
   },
   infoText: {
+    fontFamily: font.regular,
     fontSize: fontSize.sm,
     color: colors.textPrimary,
     lineHeight: 20,
