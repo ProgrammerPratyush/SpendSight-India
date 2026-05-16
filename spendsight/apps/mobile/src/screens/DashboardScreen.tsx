@@ -30,7 +30,7 @@ const PERIOD_LABELS: Record<Period, string> = {
   month: "Total spent this month",
 };
 
-const CAT_ICON_BG: Record<string, string> = {
+const CAT_BG: Record<string, string> = {
   "Food & Dining": "#FFF4E6",
   Shopping: "#F3E8FF",
   Travel: "#E8F4FD",
@@ -66,28 +66,39 @@ export default function DashboardScreen({ navigation }: any) {
     setRefreshing(true);
     await Promise.all([fetchTransactions(), fetchInsights()]);
     setRefreshing(false);
-  }, []);
+  }, [fetchTransactions, fetchInsights]);
 
+  // Build category totals from transactions
   const categoryTotals = transactions
     .filter((tx) => tx.type === "debit" && tx.status !== "failed")
-    .reduce((acc: Record<string, any>, tx) => {
-      const cat = tx.categoryId;
-      if (!cat) return acc;
-      if (!acc[cat._id]) {
-        acc[cat._id] = {
-          name: cat.name,
-          icon: cat.icon,
-          total: 0,
-          bg: CAT_ICON_BG[cat.name] || "#F3F4F6",
-        };
-      }
-      acc[cat._id].total += tx.amount;
-      return acc;
-    }, {});
+    .reduce(
+      (
+        acc: Record<
+          string,
+          { name: string; icon: string; total: number; bg: string }
+        >,
+        tx,
+      ) => {
+        const cat = tx.categoryId;
+        if (!cat) return acc;
+        if (!acc[cat._id]) {
+          acc[cat._id] = {
+            name: cat.name,
+            icon: cat.icon,
+            total: 0,
+            bg: CAT_BG[cat.name] || "#F3F4F6",
+          };
+        }
+        acc[cat._id].total += tx.amount;
+        return acc;
+      },
+      {},
+    );
 
   const topCategories = Object.values(categoryTotals)
-    .sort((a: any, b: any) => b.total - a.total)
+    .sort((a, b) => b.total - a.total)
     .slice(0, 4);
+
   const topInsight = insights[0];
 
   return (
@@ -103,20 +114,18 @@ export default function DashboardScreen({ navigation }: any) {
         }
       >
         {/* Header */}
-        {/* Header */}
-        {/* Header */}
         <View style={styles.header}>
           <View>
-            <Text style={styles.welcomeText}>Welcome back,</Text>
+            <Text style={styles.greeting}>Welcome back,</Text>
             <Text style={styles.userName}>Hi, {user?.name || "there"} 👋</Text>
           </View>
           <TouchableOpacity style={styles.notifBtn}>
-            <Text style={styles.notifBell}>🔔</Text>
+            <Text style={styles.notifIcon}>🔔</Text>
           </TouchableOpacity>
         </View>
 
         {/* Period tabs */}
-        <View style={styles.tabsWrap}>
+        <View style={styles.tabsRow}>
           {(["today", "week", "month"] as Period[]).map((p) => (
             <TouchableOpacity
               key={p}
@@ -138,7 +147,7 @@ export default function DashboardScreen({ navigation }: any) {
             <ActivityIndicator
               color="#FFF"
               size="large"
-              style={{ padding: 24 }}
+              style={{ padding: spacing.xl }}
             />
           ) : (
             <>
@@ -147,7 +156,7 @@ export default function DashboardScreen({ navigation }: any) {
                 ₹{(totals.spent / 100).toLocaleString("en-IN")}
               </Text>
               {totals.received > 0 && (
-                <View style={styles.receivedRow}>
+                <View style={styles.receivedPill}>
                   <Text style={styles.receivedText}>
                     ↑ {formatCurrency(totals.received)} received
                   </Text>
@@ -155,40 +164,25 @@ export default function DashboardScreen({ navigation }: any) {
               )}
             </>
           )}
-          <View style={styles.cardIconBg}>
-            <Text style={{ fontSize: 64, opacity: 0.08 }}>₹</Text>
-          </View>
         </View>
 
         {/* Insight card */}
-        {topInsight ? (
-          <View style={[styles.insightCard, shadow.card]}>
-            <View style={styles.insightIconWrap}>
-              <Text style={{ fontSize: 20 }}>💡</Text>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.insightTitle}>Smart Insight</Text>
-              <Text style={styles.insightText}>{topInsight.text}</Text>
-            </View>
+        <View style={[styles.insightCard, shadow.card]}>
+          <View style={styles.insightIconWrap}>
+            <Text style={{ fontSize: 22 }}>💡</Text>
           </View>
-        ) : (
-          !isLoading && (
-            <View style={[styles.insightCard, shadow.card]}>
-              <View style={styles.insightIconWrap}>
-                <Text style={{ fontSize: 20 }}>💡</Text>
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.insightTitle}>Smart Insight</Text>
-                <Text style={styles.insightText}>
-                  Add your first transaction to see insights here.
-                </Text>
-              </View>
-            </View>
-          )
-        )}
+          <View style={{ flex: 1 }}>
+            <Text style={styles.insightTitle}>Smart Insight</Text>
+            <Text style={styles.insightText}>
+              {topInsight
+                ? topInsight.text
+                : "Add your first transaction to see insights here."}
+            </Text>
+          </View>
+        </View>
 
         {/* Category breakdown */}
-        <View style={styles.sectionHeader}>
+        <View style={styles.sectionRow}>
           <Text style={styles.sectionTitle}>Category Breakdown</Text>
           <TouchableOpacity onPress={() => navigation.navigate("Transactions")}>
             <Text style={styles.sectionLink}>VIEW DETAILS</Text>
@@ -197,46 +191,46 @@ export default function DashboardScreen({ navigation }: any) {
 
         {topCategories.length > 0 ? (
           <View style={[styles.categoryCard, shadow.card]}>
-            {topCategories.map((cat: any, i: number) => (
+            {topCategories.map((cat, i) => (
               <View key={cat.name}>
                 <View style={styles.catRow}>
                   <View
                     style={[styles.catIconWrap, { backgroundColor: cat.bg }]}
                   >
-                    <Text style={{ fontSize: 18 }}>{cat.icon}</Text>
+                    <Text style={{ fontSize: 22 }}>{cat.icon}</Text>
                   </View>
-                  <View style={styles.catInfo}>
+                  <View style={{ flex: 1 }}>
                     <Text style={styles.catName}>{cat.name}</Text>
                   </View>
                   <Text style={styles.catAmount}>
                     {formatCurrency(cat.total)}
                   </Text>
                 </View>
-                {/* Progress bar */}
                 <View style={styles.progressBg}>
                   <View
                     style={[
                       styles.progressFill,
                       {
-                        width:
-                          `${Math.min((cat.total / (totals.spent || 1)) * 100, 100)}%` as any,
-                        backgroundColor: colors.primary,
+                        width: `${Math.min(
+                          (cat.total / (totals.spent || 1)) * 100,
+                          100,
+                        )}%` as any,
                       },
                     ]}
                   />
                 </View>
                 {i < topCategories.length - 1 && (
-                  <View style={styles.catDivider} />
+                  <View style={styles.divider} />
                 )}
               </View>
             ))}
           </View>
         ) : (
           !isLoading && (
-            <View style={[styles.emptyCategories, shadow.card]}>
-              <Text style={styles.emptyIcon}>📊</Text>
+            <View style={[styles.emptyCard, shadow.card]}>
+              <Text style={{ fontSize: 36 }}>📊</Text>
               <Text style={styles.emptyText}>No spending data yet</Text>
-              <Text style={styles.emptySubText}>
+              <Text style={styles.emptySub}>
                 Add a transaction to see breakdown
               </Text>
             </View>
@@ -244,7 +238,7 @@ export default function DashboardScreen({ navigation }: any) {
         )}
 
         {/* Recent activity */}
-        <View style={styles.sectionHeader}>
+        <View style={styles.sectionRow}>
           <Text style={styles.sectionTitle}>Recent Activity</Text>
           <TouchableOpacity onPress={() => navigation.navigate("Transactions")}>
             <Text style={styles.sectionLink}>SEE ALL</Text>
@@ -252,12 +246,10 @@ export default function DashboardScreen({ navigation }: any) {
         </View>
 
         {transactions.length === 0 && !isLoading ? (
-          <View style={[styles.emptyCategories, shadow.card]}>
-            <Text style={styles.emptyIcon}>📭</Text>
+          <View style={[styles.emptyCard, shadow.card]}>
+            <Text style={{ fontSize: 36 }}>📭</Text>
             <Text style={styles.emptyText}>No transactions yet</Text>
-            <Text style={styles.emptySubText}>
-              Tap + to add your first spend
-            </Text>
+            <Text style={styles.emptySub}>Tap + to add your first spend</Text>
           </View>
         ) : (
           <View style={[styles.recentCard, shadow.card]}>
@@ -269,11 +261,11 @@ export default function DashboardScreen({ navigation }: any) {
                       styles.txIconWrap,
                       {
                         backgroundColor:
-                          CAT_ICON_BG[tx.categoryId?.name || ""] || "#F3F4F6",
+                          CAT_BG[tx.categoryId?.name || ""] || "#F3F4F6",
                       },
                     ]}
                   >
-                    <Text style={{ fontSize: 18 }}>
+                    <Text style={{ fontSize: 22 }}>
                       {tx.categoryId?.icon || "💰"}
                     </Text>
                   </View>
@@ -302,7 +294,7 @@ export default function DashboardScreen({ navigation }: any) {
                     </Text>
                     <View
                       style={[
-                        styles.statusBadge,
+                        styles.statusPill,
                         {
                           backgroundColor:
                             tx.type === "credit"
@@ -328,14 +320,14 @@ export default function DashboardScreen({ navigation }: any) {
                   </View>
                 </View>
                 {i < Math.min(transactions.length, 5) - 1 && (
-                  <View style={styles.catDivider} />
+                  <View style={styles.divider} />
                 )}
               </View>
             ))}
           </View>
         )}
 
-        <View style={{ height: 110 }} />
+        <View style={{ height: 120 }} />
       </ScrollView>
 
       {/* FAB */}
@@ -351,41 +343,44 @@ export default function DashboardScreen({ navigation }: any) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
+
+  // Header
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     paddingHorizontal: spacing.screenPadding,
-    paddingTop: spacing.md,
+    paddingTop: spacing.lg,
     paddingBottom: spacing.sm,
   },
-  welcomeText: {
+  greeting: {
     fontFamily: font.regular,
-    fontSize: fontSize.sm,
+    fontSize: fontSize.md,
     color: colors.textSecondary,
   },
   userName: {
     fontFamily: font.extrabold,
-    fontSize: fontSize.xl,
+    fontSize: 26,
     color: colors.textPrimary,
     marginTop: 2,
   },
   notifBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: colors.cardBackground,
     justifyContent: "center",
     alignItems: "center",
     borderWidth: 1,
     borderColor: colors.border,
   },
-  notifBell: {
-    fontSize: 18,
-  },
-  tabsWrap: {
+  notifIcon: { fontSize: 20 },
+
+  // Period tabs
+  tabsRow: {
     flexDirection: "row",
     marginHorizontal: spacing.screenPadding,
+    marginBottom: spacing.sm,
     backgroundColor: colors.cardBackground,
     borderRadius: radius.full,
     padding: 4,
@@ -394,41 +389,44 @@ const styles = StyleSheet.create({
   },
   tab: {
     flex: 1,
-    paddingVertical: 8,
+    paddingVertical: 10,
     alignItems: "center",
     borderRadius: radius.full,
   },
   tabActive: { backgroundColor: colors.primary },
   tabText: {
     fontFamily: font.semibold,
-    fontSize: fontSize.sm,
+    fontSize: fontSize.md,
     color: colors.textSecondary,
   },
   tabTextActive: { color: "#FFFFFF" },
+
+  // Spend card
   spendCard: {
-    margin: spacing.screenPadding,
+    marginHorizontal: spacing.screenPadding,
+    marginBottom: spacing.md,
     backgroundColor: colors.primary,
     borderRadius: radius.xl,
-    padding: spacing.lg,
-    overflow: "hidden",
-    minHeight: 120,
+    padding: spacing.xl,
+    minHeight: 140,
+    justifyContent: "center",
   },
   spendLabel: {
     fontFamily: font.medium,
-    fontSize: fontSize.sm,
-    color: "rgba(255,255,255,0.7)",
+    fontSize: fontSize.md,
+    color: "rgba(255,255,255,0.75)",
+    marginBottom: spacing.xs,
   },
   spendAmount: {
     fontFamily: font.extrabold,
-    fontSize: fontSize.hero,
+    fontSize: 52,
     color: "#FFFFFF",
-    marginTop: 4,
+    letterSpacing: -1,
   },
-  receivedRow: {
+  receivedPill: {
     marginTop: spacing.sm,
-    flexDirection: "row",
-    backgroundColor: "rgba(255,255,255,0.15)",
     alignSelf: "flex-start",
+    backgroundColor: "rgba(255,255,255,0.15)",
     paddingHorizontal: spacing.sm,
     paddingVertical: 4,
     borderRadius: radius.full,
@@ -438,28 +436,23 @@ const styles = StyleSheet.create({
     fontSize: fontSize.xs,
     color: "#FFFFFF",
   },
-  cardIconBg: { position: "absolute", right: -10, top: -10 },
+
+  // Insight
   insightCard: {
     flexDirection: "row",
     alignItems: "flex-start",
     marginHorizontal: spacing.screenPadding,
+    marginBottom: spacing.md,
     backgroundColor: colors.cardBackground,
     borderRadius: radius.lg,
     padding: spacing.md,
     gap: spacing.sm,
-    marginBottom: spacing.md,
     borderLeftWidth: 4,
     borderLeftColor: colors.accent,
-    // shadow
-    shadowColor: "#000B60",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 2,
   },
   insightIconWrap: {
-    width: 36,
-    height: 36,
+    width: 40,
+    height: 40,
     borderRadius: radius.sm,
     backgroundColor: colors.accentLight,
     justifyContent: "center",
@@ -469,15 +462,17 @@ const styles = StyleSheet.create({
     fontFamily: font.bold,
     fontSize: fontSize.md,
     color: colors.accent,
+    marginBottom: 2,
   },
   insightText: {
     fontFamily: font.regular,
     fontSize: fontSize.sm,
     color: colors.textSecondary,
-    marginTop: 2,
-    lineHeight: 18,
+    lineHeight: 20,
   },
-  sectionHeader: {
+
+  // Section headers
+  sectionRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
@@ -496,23 +491,28 @@ const styles = StyleSheet.create({
     color: colors.primary,
     letterSpacing: 0.5,
   },
+
+  // Category card
   categoryCard: {
     marginHorizontal: spacing.screenPadding,
     marginBottom: spacing.md,
     backgroundColor: colors.cardBackground,
     borderRadius: radius.lg,
     padding: spacing.md,
-    gap: spacing.sm,
   },
-  catRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  catRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
   catIconWrap: {
-    width: 40,
-    height: 40,
+    width: 44,
+    height: 44,
     borderRadius: radius.sm,
     justifyContent: "center",
     alignItems: "center",
   },
-  catInfo: { flex: 1 },
   catName: {
     fontFamily: font.semibold,
     fontSize: fontSize.md,
@@ -527,15 +527,23 @@ const styles = StyleSheet.create({
     height: 6,
     backgroundColor: colors.borderLight,
     borderRadius: radius.full,
-    marginTop: spacing.xs,
+    marginTop: 6,
+    marginBottom: 6,
     marginLeft: 52,
+    overflow: "hidden",
   },
-  progressFill: { height: "100%", borderRadius: radius.full },
-  catDivider: {
+  progressFill: {
+    height: "100%",
+    backgroundColor: colors.primary,
+    borderRadius: radius.full,
+  },
+  divider: {
     height: 1,
     backgroundColor: colors.borderLight,
-    marginVertical: spacing.sm,
+    marginVertical: spacing.xs,
   },
+
+  // Recent card
   recentCard: {
     marginHorizontal: spacing.screenPadding,
     marginBottom: spacing.md,
@@ -550,8 +558,8 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   txIconWrap: {
-    width: 44,
-    height: 44,
+    width: 48,
+    height: 48,
     borderRadius: radius.sm,
     justifyContent: "center",
     alignItems: "center",
@@ -569,54 +577,61 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   txRight: { alignItems: "flex-end", gap: 4 },
-  txAmount: { fontFamily: font.bold, fontSize: fontSize.md },
-  statusBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+  txAmount: {
+    fontFamily: font.bold,
+    fontSize: fontSize.lg,
+    color: colors.textPrimary,
+  },
+  statusPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
     borderRadius: radius.xs,
   },
-  statusText: { fontFamily: font.semibold, fontSize: 9, letterSpacing: 0.3 },
-  emptyCategories: {
+  statusText: {
+    fontFamily: font.semibold,
+    fontSize: 10,
+    letterSpacing: 0.3,
+  },
+
+  // Empty states
+  emptyCard: {
     marginHorizontal: spacing.screenPadding,
     marginBottom: spacing.md,
     backgroundColor: colors.cardBackground,
     borderRadius: radius.lg,
     padding: spacing.xl,
     alignItems: "center",
+    gap: spacing.xs,
   },
-  emptyIcon: { fontSize: 36, marginBottom: spacing.sm },
   emptyText: {
     fontFamily: font.bold,
     fontSize: fontSize.md,
     color: colors.textPrimary,
   },
-  emptySubText: {
+  emptySub: {
     fontFamily: font.regular,
     fontSize: fontSize.sm,
     color: colors.textMuted,
-    marginTop: 4,
+    textAlign: "center",
   },
+
+  // FAB
   fab: {
     position: "absolute",
-    bottom: 90, // was 100, now sits above tab bar cleanly
+    bottom: 96,
     right: spacing.screenPadding,
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
     backgroundColor: colors.primary,
     justifyContent: "center",
     alignItems: "center",
-    shadowColor: "#000B60",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
-    elevation: 8,
   },
   fabText: {
     color: "#FFFFFF",
-    fontSize: 28,
+    fontSize: 32,
     fontFamily: font.regular,
-    lineHeight: 32,
+    lineHeight: 36,
     textAlign: "center",
   },
 });

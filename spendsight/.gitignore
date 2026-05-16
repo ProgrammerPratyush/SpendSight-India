@@ -38,3 +38,9 @@ Thumbs.db
 
 # ── TypeScript ────────────────────────────────────────────────────────────────
 *.tsbuildinfo
+
+# GitHub / tokens / credentials
+Github-project-token.json
+
+# Temporary Microsoft Office files
+~$*

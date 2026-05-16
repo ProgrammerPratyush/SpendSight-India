@@ -4,13 +4,10 @@ const router = express.Router();
 const { z } = require('zod');
 const Transaction = require('../models/Transaction');
 const User = require('../models/User');
-const authMiddleware = require('../middleware/authMiddleware');
 const { classifyMerchant } = require('../services/categoryClassifier');
 
-
-// Zod schema for creating a transaction
 const createTxSchema = z.object({
-    amount: z.number().positive(),          // in rupees — we convert to paise
+    amount: z.number().positive(),
     type: z.enum(['debit', 'credit']),
     merchantRaw: z.string().optional(),
     merchantNormalised: z.string().optional(),
@@ -18,7 +15,7 @@ const createTxSchema = z.object({
     source: z.enum(['sms', 'manual', 'import']).default('manual'),
     smsHash: z.string().optional(),
     bankLast4: z.string().max(4).optional(),
-    txDate: z.string(),                     // ISO date string
+    txDate: z.string(),
     txRef: z.string().optional(),
     status: z.enum(['completed', 'reversed', 'failed', 'pending']).default('completed'),
     notes: z.string().max(300).optional(),
@@ -31,8 +28,6 @@ router.get('/', async (req, res, next) => {
         if (!user) return res.status(404).json({ error: 'User not found' });
 
         const { period = 'month', limit = 50, offset = 0 } = req.query;
-
-        // Calculate date range
         const now = new Date();
         let startDate;
 
@@ -42,21 +37,19 @@ router.get('/', async (req, res, next) => {
             startDate = new Date(now);
             startDate.setDate(now.getDate() - 7);
         } else {
-            // month — current calendar month
             startDate = new Date(now.getFullYear(), now.getMonth(), 1);
         }
 
         const transactions = await Transaction.find({
             userId: user._id,
             txDate: { $gte: startDate, $lte: now },
-            status: { $ne: 'failed' },          // exclude failed transactions from view
+            status: { $ne: 'failed' },
         })
             .sort({ txDate: -1 })
             .limit(parseInt(limit))
             .skip(parseInt(offset))
             .populate('categoryId', 'name icon color');
 
-        // Calculate totals
         const totals = transactions.reduce((acc, tx) => {
             if (tx.type === 'debit') acc.spent += tx.amount;
             if (tx.type === 'credit') acc.received += tx.amount;
@@ -67,7 +60,7 @@ router.get('/', async (req, res, next) => {
             data: {
                 transactions: transactions.map(tx => ({
                     ...tx.toObject(),
-                    amountInRupees: tx.amount / 100,   // convert paise back to rupees for display
+                    amountInRupees: tx.amount / 100,
                 })),
                 totals: {
                     spent: totals.spent,
@@ -79,39 +72,24 @@ router.get('/', async (req, res, next) => {
                 count: transactions.length,
             }
         });
-
     } catch (err) {
         next(err);
     }
 });
 
 // POST /api/transactions
-// Called from mobile after SMS parsing or manual entry
 router.post('/', async (req, res, next) => {
     try {
-        logger.info('=== POST /transactions ===');
-        logger.info('Firebase UID from token:', req.userId);
-
         const user = await User.findOne({ firebaseUid: req.userId });
-        logger.info('User found in MongoDB:', user ? user._id.toString() : 'NOT FOUND');
-
         if (!user) return res.status(404).json({ error: 'User not found' });
 
-        // Validate input
-        // const parsed = createTxSchema.safeParse(req.body);
-        // if (!parsed.success) {
-        //     return res.status(400).json({ error: 'Invalid data', details: parsed.error.errors });
-        // }
-
         const parsed = createTxSchema.safeParse(req.body);
-        logger.info('Zod parse result:', parsed.success ? 'OK' : parsed.error.errors);
         if (!parsed.success) {
             return res.status(400).json({ error: 'Invalid data', details: parsed.error.errors });
         }
 
         const body = parsed.data;
 
-        // Deduplication — if smsHash provided, check for existing
         if (body.smsHash) {
             const existing = await Transaction.findOne({
                 userId: user._id,
@@ -124,13 +102,17 @@ router.post('/', async (req, res, next) => {
             }
         }
 
+        const categoryId = body.categoryId ||
+            await classifyMerchant(body.merchantNormalised || body.merchantRaw) ||
+            null;
+
         const tx = await Transaction.create({
             userId: user._id,
-            amount: Math.round(body.amount * 100),   // convert rupees to paise
+            amount: Math.round(body.amount * 100),
             type: body.type,
             merchantRaw: body.merchantRaw || '',
             merchantNormalised: body.merchantNormalised || '',
-            categoryId: body.categoryId || await classifyMerchant(body.merchantNormalised || body.merchantRaw) || null,
+            categoryId,
             source: body.source,
             smsHash: body.smsHash || null,
             bankLast4: body.bankLast4 || '',
@@ -140,20 +122,20 @@ router.post('/', async (req, res, next) => {
             notes: body.notes || '',
         });
 
+        logger.info(`Transaction created: ${tx._id}`);
+
         res.status(201).json({
             data: {
                 ...tx.toObject(),
                 amountInRupees: tx.amount / 100,
             }
         });
-
     } catch (err) {
         next(err);
     }
 });
 
 // POST /api/transactions/bulk
-// Called after SMS parsing on device — sends multiple transactions at once
 router.post('/bulk', async (req, res, next) => {
     try {
         const user = await User.findOne({ firebaseUid: req.userId });
@@ -177,9 +159,11 @@ router.post('/bulk', async (req, res, next) => {
 
             const body = parsed.data;
 
-            // Skip duplicates silently
             if (body.smsHash) {
-                const exists = await Transaction.findOne({ userId: user._id, smsHash: body.smsHash });
+                const exists = await Transaction.findOne({
+                    userId: user._id,
+                    smsHash: body.smsHash,
+                });
                 if (exists) { duplicates++; continue; }
             }
 
@@ -204,14 +188,12 @@ router.post('/bulk', async (req, res, next) => {
         res.status(201).json({
             data: { inserted, duplicates, total: transactions.length }
         });
-
     } catch (err) {
         next(err);
     }
 });
 
 // PATCH /api/transactions/:id/category
-// User corrects a category
 router.patch('/:id/category', async (req, res, next) => {
     try {
         const user = await User.findOne({ firebaseUid: req.userId });

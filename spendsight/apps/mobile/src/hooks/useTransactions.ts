@@ -35,24 +35,6 @@ export function useTransactions() {
         fetchTransactions(p);
     }, [fetchTransactions]);
 
-    // const createTransaction = useCallback(async (data: {
-    //     amount: number;
-    //     type: 'debit' | 'credit';
-    //     merchantNormalised: string;
-    //     categoryId?: string;
-    //     txDate: string;
-    //     notes?: string;
-    //     source: 'manual';
-    // }) => {
-    //     try {
-    //         const res = await apiClient.post('/api/transactions', data);
-    //         addTransaction(res.data.data);
-    //         await fetchTransactions();
-    //         return { success: true };
-    //     } catch (err: any) {
-    //         return { success: false, error: err.message };
-    //     }
-    // }, [fetchTransactions]);
     const createTransaction = useCallback(async (data: {
         amount: number;
         type: 'debit' | 'credit';
@@ -63,22 +45,15 @@ export function useTransactions() {
         source: 'manual';
     }) => {
         try {
-            logger.info('=== CREATE TRANSACTION DEBUG ===');
-            logger.info('API URL:', process.env.EXPO_PUBLIC_API_URL);
-            logger.info('Payload:', JSON.stringify(data, null, 2));
-
             const res = await apiClient.post('/api/transactions', data);
-
-            logger.info('Response:', JSON.stringify(res.data, null, 2));
             addTransaction(res.data.data);
             await fetchTransactions();
             return { success: true };
         } catch (err: any) {
-            logger.info('=== TRANSACTION ERROR ===');
-            logger.info('Status:', err.response?.status);
-            logger.info('Error data:', JSON.stringify(err.response?.data, null, 2));
-            logger.info('Message:', err.message);
-            return { success: false, error: err.message };
+            return {
+                success: false,
+                error: err.response?.data?.error || err.message || 'Unknown error'
+            };
         }
     }, [fetchTransactions]);
 

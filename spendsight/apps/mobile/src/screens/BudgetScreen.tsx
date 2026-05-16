@@ -30,12 +30,12 @@ export default function BudgetScreen() {
 
   useEffect(() => {
     fetchBudgets();
-    fetchTransactions("month");
+    fetchTransactions();
   }, []);
 
   async function onRefresh() {
     setRefreshing(true);
-    await Promise.all([fetchBudgets(), fetchTransactions("month")]);
+    await Promise.all([fetchBudgets(), fetchTransactions()]);
     setRefreshing(false);
   }
 
