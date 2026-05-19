@@ -192,7 +192,7 @@ export default function DashboardScreen({ navigation }: any) {
         {topCategories.length > 0 ? (
           <View style={[styles.categoryCard, shadow.card]}>
             {topCategories.map((cat, i) => (
-              <View key={cat.name}>
+              <View key={`${cat.name}-${i}`}>
                 <View style={styles.catRow}>
                   <View
                     style={[styles.catIconWrap, { backgroundColor: cat.bg }]}
@@ -254,7 +254,7 @@ export default function DashboardScreen({ navigation }: any) {
         ) : (
           <View style={[styles.recentCard, shadow.card]}>
             {transactions.slice(0, 5).map((tx, i) => (
-              <View key={tx._id}>
+              <View key={tx._id || `${tx.merchantRaw}-${i}`}>
                 <View style={styles.txRow}>
                   <View
                     style={[
