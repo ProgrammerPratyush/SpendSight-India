@@ -1,4 +1,5 @@
 const logger = require('../utils/logger');
+const { deleteAccount } = require("../controllers/userController");
 const express = require('express');
 const router = express.Router();
 const admin = require('firebase-admin');
@@ -80,31 +81,72 @@ router.patch('/profile', authMiddleware, async (req, res, next) => {
     }
 });
 
-// DELETE /api/auth/account
-// Permanently deletes user data from MongoDB and Firebase
-router.delete('/account', authMiddleware, async (req, res, next) => {
+// DELETE /api/auth/delete-account
+// Permanently delete user + all related data
+router.delete("/delete-account", authMiddleware, async (req, res) => {
     try {
+        logger.info(`Delete account request received for UID: ${req.userId}`);
+
+        // Find current user
         const user = await User.findOne({ firebaseUid: req.userId });
-        if (!user) return res.status(404).json({ error: 'User not found' });
 
-        // Delete all user data from MongoDB
-        const Transaction = require('../models/Transaction');
-        const Budget = require('../models/Budget');
-        const Insight = require('../models/Insight');
-        const Category = require('../models/Category');
+        if (!user) {
+            logger.warn(`User not found for UID: ${req.userId}`);
 
-        await Transaction.deleteMany({ userId: user._id });
-        await Budget.deleteMany({ userId: user._id });
-        await Insight.deleteMany({ userId: user._id });
-        await Category.deleteMany({ userId: user._id, isDefault: false });
-        await User.deleteOne({ _id: user._id });
+            return res.status(404).json({
+                success: false,
+                message: "User not found",
+            });
+        }
 
-        // Delete from Firebase Auth
-        await admin.auth().deleteUser(req.userId);
+        // Load models
+        const Transaction = require("../models/Transaction");
+        const Budget = require("../models/Budget");
+        const Insight = require("../models/Insight");
+        const Category = require("../models/Category");
 
-        res.json({ data: { success: true, message: 'Account deleted successfully' } });
-    } catch (err) {
-        next(err);
+        // Delete all related collections
+        await Promise.all([
+            Transaction.deleteMany({ userId: user._id }),
+            Budget.deleteMany({ userId: user._id }),
+            Insight.deleteMany({ userId: user._id }),
+            Category.deleteMany({
+                userId: user._id,
+                isDefault: false,
+            }),
+        ]);
+
+        logger.info(`Deleted related collections for user ${user._id}`);
+
+        // Delete Mongo user
+        await User.findByIdAndDelete(user._id);
+
+        logger.info(`Deleted Mongo user ${user._id}`);
+
+        // Delete Firebase Auth user
+        try {
+            await admin.auth().deleteUser(req.userId);
+
+            logger.info(`Deleted Firebase user ${req.userId}`);
+        } catch (firebaseErr) {
+            logger.error(
+                `Firebase delete failed: ${firebaseErr.message}`
+            );
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: "Account deleted successfully",
+        });
+
+    } catch (error) {
+        logger.error(`Delete account failed: ${error.message}`);
+
+        return res.status(500).json({
+            success: false,
+            message: "Failed to delete account",
+            error: error.message,
+        });
     }
 });
 
