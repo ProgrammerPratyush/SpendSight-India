@@ -187,15 +187,20 @@ export default function AddTransactionScreen({ navigation }: any) {
     try {
       setLoading(true);
 
-      const result = await createTransaction({
-        amount: parsedAmount,
+      const payload = {
+        amount: Number(parsedAmount),
         type,
+        merchantRaw: merchant.trim(),
         merchantNormalised: merchant.trim(),
-        categoryId: selectedCategory?._id,
+        categoryId: selectedCategory?._id || undefined,
         txDate: txDate.toISOString(),
         notes: notes.trim(),
-        source: nlpActive ? "nlp" : "manual",
-      });
+        source: (nlpActive ? "nlp" : "manual") as "nlp" | "manual",
+      };
+
+      console.log("TX PAYLOAD:", payload);
+
+      const result = await createTransaction(payload);
 
       if (result.success) {
         navigation.goBack();

@@ -12,7 +12,7 @@ const createTxSchema = z.object({
     merchantRaw: z.string().optional(),
     merchantNormalised: z.string().optional(),
     categoryId: z.string().optional(),
-    source: z.enum(['sms', 'manual', 'import']).default('manual'),
+    source: z.enum(['sms', 'manual', 'import', 'nlp']).default('manual'),
     smsHash: z.string().optional(),
     bankLast4: z.string().max(4).optional(),
     txDate: z.string(),

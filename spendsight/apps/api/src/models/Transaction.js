@@ -33,7 +33,7 @@ const transactionSchema = new mongoose.Schema({
     },
     source: {
         type: String,
-        enum: ['sms', 'manual', 'import'],
+        enum: ['sms', 'manual', 'import', 'nlp'],
         default: 'manual',
     },
     smsHash: {
