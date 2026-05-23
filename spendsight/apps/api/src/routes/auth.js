@@ -1,7 +1,7 @@
 const express = require('express');
-const admin = require('firebase-admin');
 const { z } = require('zod');
-
+// Adding the following import for secure firebase authentication
+const admin = require('../config/firebase');
 const logger = require('../utils/logger');
 const authMiddleware = require('../middleware/authMiddleware');
 
@@ -12,24 +12,6 @@ const Insight = require('../models/Insight');
 const Category = require('../models/Category');
 
 const router = express.Router();
-
-//
-// ──────────────────────────────────────────────────────────
-// Firebase Admin Initialization
-// ──────────────────────────────────────────────────────────
-//
-
-if (!admin.apps.length) {
-    admin.initializeApp({
-        credential: admin.credential.cert({
-            projectId: process.env.FIREBASE_PROJECT_ID,
-            privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-            clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-        }),
-    });
-
-    logger.info('Firebase Admin initialized');
-}
 
 //
 // ──────────────────────────────────────────────────────────
