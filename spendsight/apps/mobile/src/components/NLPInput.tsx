@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   View,
   Text,
@@ -7,7 +7,9 @@ import {
   StyleSheet,
   Animated,
 } from "react-native";
+
 import { colors, font, fontSize, spacing, radius } from "../utils/theme";
+
 import {
   parseNaturalLanguage,
   getParsePreview,
@@ -15,28 +17,70 @@ import {
 } from "../services/nlpParser";
 
 interface Props {
-  categories: Array<{ _id: string; name: string; icon: string }>;
+  categories: Array<{
+    _id: string;
+    name: string;
+    icon: string;
+  }>;
+
   onParsed: (result: ParsedTransaction) => void;
   onClear: () => void;
 }
 
 const SUGGESTIONS = [
   "Swiggy 450",
-  "Uber 230 yesterday",
+  "Uber 220",
   "Netflix 649",
   "Zepto 380",
-  "Salary received 50000",
+  "Salary 50000",
 ];
 
 export default function NLPInput({ categories, onParsed, onClear }: Props) {
   const [text, setText] = useState("");
   const [preview, setPreview] = useState("");
   const [parsed, setParsed] = useState<ParsedTransaction | null>(null);
+
   const [focused, setFocused] = useState(false);
+
   const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+      }
+    };
+  }, []);
+
+  function runParser(value: string) {
+    const result = parseNaturalLanguage(value, categories);
+
+    setParsed(result);
+
+    const previewText = getParsePreview(result);
+
+    setPreview(previewText);
+
+    if (result.confidence >= 0.4 && result.amount) {
+      onParsed(result);
+
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 180,
+        useNativeDriver: true,
+      }).start();
+    }
+  }
 
   function handleChange(value: string) {
     setText(value);
+
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+    }
+
     if (value.trim().length < 2) {
       setPreview("");
       setParsed(null);
@@ -44,183 +88,211 @@ export default function NLPInput({ categories, onParsed, onClear }: Props) {
       return;
     }
 
-    const result = parseNaturalLanguage(value, categories);
-    const preview = getParsePreview(result);
-    setPreview(preview);
-    setParsed(result);
-
-    if (result.confidence >= 0.4 && result.amount) {
-      onParsed(result);
-      // Fade in the preview
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 200,
-        useNativeDriver: true,
-      }).start();
-    }
+    debounceRef.current = setTimeout(() => {
+      runParser(value);
+    }, 250);
   }
 
   function handleSuggestion(s: string) {
-    handleChange(s);
+    setText(s);
+
+    runParser(s);
   }
 
-  function handleClear() {
+  function clearInput() {
     setText("");
     setPreview("");
     setParsed(null);
+
     fadeAnim.setValue(0);
+
     onClear();
   }
 
   return (
-    <View style={S.container}>
-      {/* Label */}
-      <Text style={S.label}>SMART INPUT</Text>
-      <Text style={S.sublabel}>Type naturally — we auto-fill the rest</Text>
+    <View style={styles.container}>
+      <Text style={styles.label}>SMART INPUT</Text>
 
-      {/* Input field */}
-      <View style={[S.inputWrap, focused && S.inputWrapFocused]}>
-        <Text style={S.inputIcon}>✨</Text>
+      <Text style={styles.subLabel}>Type naturally and we’ll auto-fill</Text>
+
+      <View style={[styles.inputContainer, focused && styles.inputFocused]}>
+        <Text style={styles.sparkle}>✨</Text>
+
         <TextInput
-          style={S.input}
-          placeholder="e.g. Swiggy 450 or Uber yesterday"
+          style={styles.input}
+          placeholder="Swiggy 450"
           placeholderTextColor="#9CA3AF"
           value={text}
           onChangeText={handleChange}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
-          autoCapitalize="none"
           autoCorrect={false}
+          autoCapitalize="none"
           returnKeyType="done"
         />
+
         {text.length > 0 && (
-          <TouchableOpacity onPress={handleClear} style={S.clearBtn}>
-            <Text style={S.clearIcon}>✕</Text>
+          <TouchableOpacity
+            onPress={clearInput}
+            hitSlop={{
+              top: 10,
+              bottom: 10,
+              left: 10,
+              right: 10,
+            }}
+          >
+            <Text style={styles.clear}>✕</Text>
           </TouchableOpacity>
         )}
       </View>
 
-      {/* Live preview */}
       {preview.length > 0 && (
-        <Animated.View style={[S.previewBox, { opacity: fadeAnim }]}>
-          <Text style={S.previewIcon}>{parsed?.categoryIcon || "💰"}</Text>
-          <Text style={S.previewText}>{preview}</Text>
-          <View
-            style={[
-              S.confidenceDot,
-              {
-                backgroundColor:
-                  (parsed?.confidence || 0) >= 0.7 ? "#10B981" : "#F59E0B",
-              },
-            ]}
-          />
+        <Animated.View
+          style={[
+            styles.previewBox,
+            {
+              opacity: fadeAnim,
+            },
+          ]}
+        >
+          <Text style={styles.previewEmoji}>
+            {parsed?.categoryIcon || "💰"}
+          </Text>
+
+          <Text style={styles.previewText}>{preview}</Text>
         </Animated.View>
       )}
 
-      {/* Suggestions — shown when empty */}
       {text.length === 0 && (
-        <View style={S.suggestions}>
-          <Text style={S.suggestionsLabel}>Try these:</Text>
-          <View style={S.suggestionChips}>
-            {SUGGESTIONS.map((s) => (
-              <TouchableOpacity
-                key={s}
-                style={S.suggestionChip}
-                onPress={() => handleSuggestion(s)}
-              >
-                <Text style={S.suggestionText}>{s}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+        <View style={styles.suggestions}>
+          {SUGGESTIONS.map((item) => (
+            <TouchableOpacity
+              key={item}
+              style={styles.chip}
+              onPress={() => handleSuggestion(item)}
+            >
+              <Text style={styles.chipText}>{item}</Text>
+            </TouchableOpacity>
+          ))}
         </View>
       )}
     </View>
   );
 }
 
-const S = StyleSheet.create({
-  container: { marginBottom: spacing.sm },
+const styles = StyleSheet.create({
+  container: {
+    marginBottom: spacing.md,
+  },
+
   label: {
     fontFamily: font.bold,
-    fontSize: fontSize.xs,
+    fontSize: 11,
     color: "#9CA3AF",
-    letterSpacing: 0.8,
-    marginBottom: 2,
+    letterSpacing: 1,
+    marginBottom: 4,
   },
-  sublabel: {
+
+  subLabel: {
     fontFamily: font.regular,
-    fontSize: fontSize.xs,
+    fontSize: 13,
     color: "#9CA3AF",
-    marginBottom: spacing.sm,
+    marginBottom: 10,
   },
-  inputWrap: {
+
+  inputContainer: {
     flexDirection: "row",
     alignItems: "center",
+
     backgroundColor: "#FFFFFF",
-    borderRadius: radius.lg,
+
+    borderRadius: 18,
+
     borderWidth: 1.5,
-    borderColor: "#E8ECF0",
-    paddingHorizontal: spacing.md,
-    gap: spacing.sm,
+    borderColor: "#E5E7EB",
+
+    paddingHorizontal: 16,
+
+    minHeight: 58,
   },
-  inputWrapFocused: {
-    borderColor: colors.accent,
-    shadowColor: colors.accent,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
-    elevation: 3,
+
+  inputFocused: {
+    borderColor: colors.primary,
   },
-  inputIcon: { fontSize: 18 },
+
+  sparkle: {
+    fontSize: 18,
+    marginRight: 10,
+  },
+
   input: {
     flex: 1,
+
     fontFamily: font.medium,
-    fontSize: fontSize.md,
+    fontSize: 16,
+
     color: colors.textPrimary,
+
     paddingVertical: 14,
   },
-  clearBtn: { padding: 4 },
-  clearIcon: { fontSize: 14, color: "#9CA3AF" },
+
+  clear: {
+    fontSize: 14,
+    color: "#9CA3AF",
+  },
+
   previewBox: {
+    marginTop: 10,
+
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.xs,
-    marginTop: spacing.xs,
-    backgroundColor: "#F0FDF9",
-    borderRadius: radius.md,
-    padding: spacing.sm,
+
+    backgroundColor: "#ECFDF5",
+
+    borderRadius: 14,
+
     borderWidth: 1,
-    borderColor: "#99F6E4",
+    borderColor: "#A7F3D0",
+
+    paddingHorizontal: 12,
+    paddingVertical: 10,
   },
-  previewIcon: { fontSize: 16 },
+
+  previewEmoji: {
+    fontSize: 18,
+    marginRight: 8,
+  },
+
   previewText: {
     flex: 1,
+
     fontFamily: font.semibold,
-    fontSize: fontSize.sm,
-    color: "#0D9488",
+    fontSize: 14,
+
+    color: "#047857",
   },
-  confidenceDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+
+  suggestions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+
+    gap: 8,
+
+    marginTop: 12,
   },
-  suggestions: { marginTop: spacing.sm },
-  suggestionsLabel: {
-    fontFamily: font.medium,
-    fontSize: fontSize.xs,
-    color: "#9CA3AF",
-    marginBottom: 6,
-  },
-  suggestionChips: { flexDirection: "row", flexWrap: "wrap", gap: spacing.xs },
-  suggestionChip: {
+
+  chip: {
     backgroundColor: "#F3F4F6",
-    borderRadius: radius.full,
+
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: 8,
+
+    borderRadius: 999,
   },
-  suggestionText: {
+
+  chipText: {
     fontFamily: font.medium,
-    fontSize: fontSize.xs,
+    fontSize: 13,
     color: "#374151",
   },
 });
