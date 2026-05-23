@@ -42,7 +42,7 @@ export function useTransactions() {
         categoryId?: string;
         txDate: string;
         notes?: string;
-        source: 'manual';
+        source: "manual" | "nlp";
     }) => {
         try {
             const res = await apiClient.post('/api/transactions', data);

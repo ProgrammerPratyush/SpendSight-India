@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -12,8 +12,11 @@ import {
   Platform,
   Modal,
 } from "react-native";
+
 import { SafeAreaView } from "react-native-safe-area-context";
 import DateTimePicker from "@react-native-community/datetimepicker";
+import { format } from "date-fns";
+
 import {
   colors,
   font,
@@ -22,9 +25,12 @@ import {
   radius,
   shadow,
 } from "../utils/theme";
+
 import { useTransactions } from "../hooks/useTransactions";
 import apiClient from "../services/apiClient";
-import { format } from "date-fns";
+
+import NLPInput from "../components/NLPInput";
+import { ParsedTransaction } from "../services/nlpParser";
 
 interface Category {
   _id: string;
@@ -45,593 +51,441 @@ const FALLBACK_CATS: Category[] = [
   { _id: "other", name: "Other", icon: "💰", color: "#F9FAFB" },
 ];
 
+const TOP_CAT_NAMES = ["Food & Dining", "Shopping", "Travel", "Utilities"];
+
 export default function AddTransactionScreen({ navigation }: any) {
   const { createTransaction } = useTransactions();
+
   const [amount, setAmount] = useState("");
   const [merchant, setMerchant] = useState("");
   const [notes, setNotes] = useState("");
+
   const [type, setType] = useState<"debit" | "credit">("debit");
+
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(
     null,
   );
+
   const [categories, setCategories] = useState<Category[]>(FALLBACK_CATS);
-  const [loading, setLoading] = useState(false);
+
   const [loadingCats, setLoadingCats] = useState(true);
+  const [loading, setLoading] = useState(false);
+
   const [txDate, setTxDate] = useState(new Date());
+
   const [showDatePicker, setShowDatePicker] = useState(false);
 
+  const [nlpActive, setNlpActive] = useState(Platform.OS === "ios");
+
+  // Fetch categories
   useEffect(() => {
-    apiClient
-      .get("/api/categories")
-      .then((res) => {
+    let mounted = true;
+
+    async function fetchCategories() {
+      try {
+        const res = await apiClient.get("/api/categories");
+
         const cats = res.data?.data?.categories || [];
-        if (cats.length > 0) setCategories(cats);
-      })
-      .catch(() => {
-        // keep fallback categories
-      })
-      .finally(() => setLoadingCats(false));
+
+        if (mounted && cats.length > 0) {
+          setCategories(cats);
+        }
+      } catch (err) {
+        console.log("Category fetch failed");
+      } finally {
+        if (mounted) {
+          setLoadingCats(false);
+        }
+      }
+    }
+
+    fetchCategories();
+
+    return () => {
+      mounted = false;
+    };
   }, []);
+
+  // NLP Parser Handler
+  const handleNLPParsed = useCallback(
+    (parsed: ParsedTransaction) => {
+      if (!parsed) return;
+
+      if (parsed.amount && parsed.amount > 0) {
+        setAmount(String(parsed.amount));
+      }
+
+      if (parsed.merchantNormalised) {
+        setMerchant(parsed.merchantNormalised);
+      }
+
+      if (parsed.type) {
+        setType(parsed.type);
+      }
+
+      if (parsed.txDate instanceof Date) {
+        setTxDate(parsed.txDate);
+      }
+
+      // Category matching
+      let matchedCategory: Category | undefined;
+
+      if (parsed.categoryId) {
+        matchedCategory = categories.find((c) => c._id === parsed.categoryId);
+      }
+
+      if (!matchedCategory && parsed.categoryName) {
+        matchedCategory = categories.find(
+          (c) => c.name.toLowerCase() === parsed.categoryName?.toLowerCase(),
+        );
+      }
+
+      if (matchedCategory) {
+        setSelectedCategory(matchedCategory);
+      }
+    },
+    [categories],
+  );
+
+  function handleNLPClear() {
+    // intentionally no-op
+  }
 
   function formatDateLabel(date: Date): string {
     const today = new Date();
-    const yesterday = new Date(today);
+
+    const yesterday = new Date();
     yesterday.setDate(today.getDate() - 1);
 
-    if (date.toDateString() === today.toDateString()) return "Today";
-    if (date.toDateString() === yesterday.toDateString()) return "Yesterday";
+    if (date.toDateString() === today.toDateString()) {
+      return "Today";
+    }
+
+    if (date.toDateString() === yesterday.toDateString()) {
+      return "Yesterday";
+    }
+
     return format(date, "d MMM yyyy");
   }
 
   async function handleSubmit() {
-    const parsed = parseFloat(amount);
-    if (!parsed || parsed <= 0) {
+    const parsedAmount = parseFloat(amount);
+
+    if (!parsedAmount || parsedAmount <= 0) {
       Alert.alert(
         "Invalid Amount",
         "Please enter a valid amount greater than 0.",
       );
       return;
     }
+
     if (!merchant.trim()) {
-      Alert.alert("Missing Info", "Please enter the merchant or description.");
+      Alert.alert("Missing Merchant", "Please enter merchant or description.");
       return;
     }
 
-    setLoading(true);
-    const result = await createTransaction({
-      amount: parsed,
-      type,
-      merchantNormalised: merchant.trim(),
-      categoryId: selectedCategory?._id,
-      txDate: txDate.toISOString(),
-      notes: notes.trim(),
-      source: "manual",
-    });
-    setLoading(false);
+    try {
+      setLoading(true);
 
-    if (result.success) {
-      navigation.goBack();
-    } else {
-      Alert.alert(
-        "Could Not Save",
-        result.error || "Please check your connection and try again.",
-      );
+      const result = await createTransaction({
+        amount: parsedAmount,
+        type,
+        merchantNormalised: merchant.trim(),
+        categoryId: selectedCategory?._id,
+        txDate: txDate.toISOString(),
+        notes: notes.trim(),
+        source: nlpActive ? "nlp" : "manual",
+      });
+
+      if (result.success) {
+        navigation.goBack();
+      } else {
+        Alert.alert("Could Not Save", result.error || "Something went wrong.");
+      }
+    } catch (err) {
+      Alert.alert("Error", "Failed to save transaction.");
+    } finally {
+      setLoading(false);
     }
   }
 
-  const topCats = categories.filter((c) =>
-    ["Food & Dining", "Shopping", "Travel", "Utilities"].includes(c.name),
-  );
-  const otherCats = categories.filter(
-    (c) =>
-      !["Food & Dining", "Shopping", "Travel", "Utilities"].includes(c.name),
-  );
+  const topCats = categories.filter((c) => TOP_CAT_NAMES.includes(c.name));
+
+  const otherCats = categories.filter((c) => !TOP_CAT_NAMES.includes(c.name));
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={S.container}>
       <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
         style={{ flex: 1 }}
       >
         {/* Header */}
-        <View style={styles.header}>
+        <View style={S.header}>
           <TouchableOpacity
             onPress={() => navigation.goBack()}
-            style={styles.closeBtn}
+            style={S.closeBtn}
           >
-            <Text style={styles.closeBtnText}>✕</Text>
+            <Text style={S.closeText}>✕</Text>
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Add Transaction</Text>
-          <TouchableOpacity
-            onPress={handleSubmit}
-            disabled={loading}
-            style={styles.saveBtn}
-          >
+
+          <Text style={S.headerTitle}>Add Transaction</Text>
+
+          <TouchableOpacity onPress={handleSubmit} disabled={loading}>
             {loading ? (
-              <ActivityIndicator color={colors.primary} size="small" />
+              <ActivityIndicator size="small" color={colors.primary} />
             ) : (
-              <Text style={styles.saveBtnText}>Save</Text>
+              <Text style={S.headerSaveText}>Save</Text>
             )}
           </TouchableOpacity>
         </View>
 
         <ScrollView
-          contentContainerStyle={styles.content}
+          contentContainerStyle={S.content}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          {/* Type toggle */}
-          <View style={styles.typeRow}>
+          {/* Smart / Manual Toggle */}
+          <View style={S.modeToggle}>
             <TouchableOpacity
-              style={[
-                styles.typeBtn,
-                type === "debit" && styles.typeDebitActive,
-              ]}
-              onPress={() => setType("debit")}
+              style={[S.modeBtn, nlpActive && S.modeBtnActive]}
+              onPress={() => setNlpActive(true)}
             >
-              <Text style={styles.typeBtnEmoji}>💸</Text>
-              <Text
-                style={[
-                  styles.typeBtnText,
-                  type === "debit" && styles.typeBtnTextActive,
-                ]}
-              >
-                Spent
+              <Text style={[S.modeBtnText, nlpActive && S.modeBtnTextActive]}>
+                ✨ Smart
               </Text>
             </TouchableOpacity>
+
             <TouchableOpacity
-              style={[
-                styles.typeBtn,
-                type === "credit" && styles.typeCreditActive,
-              ]}
+              style={[S.modeBtn, !nlpActive && S.modeBtnActive]}
+              onPress={() => setNlpActive(false)}
+            >
+              <Text style={[S.modeBtnText, !nlpActive && S.modeBtnTextActive]}>
+                ✏️ Manual
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* NLP Input */}
+          {nlpActive && (
+            <>
+              <NLPInput
+                categories={categories}
+                onParsed={handleNLPParsed}
+                onClear={handleNLPClear}
+              />
+
+              <View style={S.orRow}>
+                <View style={S.orLine} />
+                <Text style={S.orText}>or fill manually below</Text>
+                <View style={S.orLine} />
+              </View>
+            </>
+          )}
+
+          {/* Type */}
+          <View style={S.typeRow}>
+            <TouchableOpacity
+              style={[S.typeBtn, type === "debit" && S.typeDebitActive]}
+              onPress={() => setType("debit")}
+            >
+              <Text>💸</Text>
+              <Text style={S.typeBtnText}>Spent</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[S.typeBtn, type === "credit" && S.typeCreditActive]}
               onPress={() => setType("credit")}
             >
-              <Text style={styles.typeBtnEmoji}>💰</Text>
-              <Text
-                style={[
-                  styles.typeBtnText,
-                  type === "credit" && styles.typeBtnTextActive,
-                ]}
-              >
-                Received
-              </Text>
+              <Text>💰</Text>
+              <Text style={S.typeBtnText}>Received</Text>
             </TouchableOpacity>
           </View>
 
           {/* Amount */}
-          <Text style={styles.fieldLabel}>ENTER AMOUNT</Text>
-          <View style={styles.amountRow}>
-            <Text style={styles.rupeeSign}>₹</Text>
+          <Text style={S.fieldLabel}>ENTER AMOUNT</Text>
+
+          <View style={S.amountRow}>
+            <Text style={S.rupee}>₹</Text>
+
             <TextInput
-              style={styles.amountInput}
+              style={S.amountInput}
               placeholder="0"
-              placeholderTextColor={colors.textMuted}
               keyboardType="decimal-pad"
               value={amount}
               onChangeText={setAmount}
-              autoFocus
+              placeholderTextColor="#C4C9D4"
             />
           </View>
 
           {/* Merchant */}
-          <View style={[styles.fieldCard, shadow.card]}>
-            <Text style={styles.fieldLabel}>MERCHANT NAME</Text>
-            <View style={styles.fieldRow}>
-              <Text style={{ fontSize: 18, marginRight: spacing.sm }}>🏪</Text>
-              <TextInput
-                style={styles.fieldInput}
-                placeholder="Where did you spend?"
-                placeholderTextColor={colors.textMuted}
-                value={merchant}
-                onChangeText={setMerchant}
-              />
-            </View>
-          </View>
+          <View style={[S.fieldCard, shadow.card]}>
+            <Text style={S.fieldLabel}>MERCHANT NAME</Text>
 
-          {/* Category grid */}
-          <Text style={[styles.fieldLabel, { marginTop: spacing.sm }]}>
-            SELECT CATEGORY
-          </Text>
-          {loadingCats ? (
-            <ActivityIndicator
-              color={colors.primary}
-              style={{ marginVertical: spacing.md }}
+            <TextInput
+              style={S.fieldInput}
+              placeholder="Where did you spend?"
+              value={merchant}
+              onChangeText={setMerchant}
             />
-          ) : (
-            <>
-              <View style={styles.catGrid}>
-                {topCats.map((cat) => (
-                  <TouchableOpacity
-                    key={cat._id}
-                    style={[
-                      styles.catGridItem,
-                      selectedCategory?._id === cat._id &&
-                        styles.catGridItemActive,
-                    ]}
-                    onPress={() =>
-                      setSelectedCategory(
-                        selectedCategory?._id === cat._id ? null : cat,
-                      )
-                    }
-                  >
-                    <View
-                      style={[
-                        styles.catGridIconWrap,
-                        {
-                          backgroundColor:
-                            selectedCategory?._id === cat._id
-                              ? colors.primary
-                              : colors.accentLight,
-                        },
-                      ]}
-                    >
-                      <Text style={{ fontSize: 26 }}>{cat.icon}</Text>
-                    </View>
-                    <Text
-                      style={[
-                        styles.catGridName,
-                        selectedCategory?._id === cat._id && {
-                          color: colors.primary,
-                          fontFamily: font.bold,
-                        },
-                      ]}
-                    >
-                      {cat.name.split(" ")[0]}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-
-              {/* Other categories — horizontal scroll */}
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                style={styles.otherCatsScroll}
-                contentContainerStyle={{ gap: spacing.sm, paddingVertical: 4 }}
-              >
-                {otherCats.map((cat) => (
-                  <TouchableOpacity
-                    key={cat._id}
-                    style={[
-                      styles.catChip,
-                      selectedCategory?._id === cat._id && styles.catChipActive,
-                    ]}
-                    onPress={() =>
-                      setSelectedCategory(
-                        selectedCategory?._id === cat._id ? null : cat,
-                      )
-                    }
-                  >
-                    <Text style={{ fontSize: 15 }}>{cat.icon}</Text>
-                    <Text
-                      style={[
-                        styles.catChipText,
-                        selectedCategory?._id === cat._id && {
-                          color: "#FFFFFF",
-                        },
-                      ]}
-                    >
-                      {cat.name.split(" ")[0]}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </>
-          )}
-
-          {/* Date picker */}
-          <TouchableOpacity
-            style={[styles.fieldCard, shadow.card, { marginTop: spacing.sm }]}
-            onPress={() => setShowDatePicker(true)}
-          >
-            <View style={styles.fieldRow}>
-              <Text style={{ fontSize: 18, marginRight: spacing.sm }}>📅</Text>
-              <Text style={styles.fieldLabel}>DATE</Text>
-              <View style={{ flex: 1 }} />
-              <Text style={styles.dateValue}>{formatDateLabel(txDate)}</Text>
-              <Text style={styles.dateChevron}> ›</Text>
-            </View>
-          </TouchableOpacity>
-
-          {/* iOS date picker modal */}
-          {showDatePicker && (
-            <Modal transparent animationType="slide">
-              <View style={styles.datePickerOverlay}>
-                <View style={styles.datePickerSheet}>
-                  <View style={styles.datePickerHeader}>
-                    <TouchableOpacity onPress={() => setShowDatePicker(false)}>
-                      <Text style={styles.datePickerDone}>Done</Text>
-                    </TouchableOpacity>
-                  </View>
-                  <DateTimePicker
-                    value={txDate}
-                    mode="date"
-                    display="spinner"
-                    onChange={(event, date) => {
-                      if (date) setTxDate(date);
-                    }}
-                    maximumDate={new Date()}
-                    textColor={colors.textPrimary}
-                  />
-                </View>
-              </View>
-            </Modal>
-          )}
-
-          {/* Notes */}
-          <View
-            style={[styles.fieldCard, shadow.card, { marginTop: spacing.sm }]}
-          >
-            <View style={styles.fieldRow}>
-              <Text style={{ fontSize: 18, marginRight: spacing.sm }}>📝</Text>
-              <TextInput
-                style={[styles.fieldInput, { flex: 1 }]}
-                placeholder="Note  (optional)"
-                placeholderTextColor={colors.textMuted}
-                value={notes}
-                onChangeText={setNotes}
-              />
-            </View>
           </View>
-
-          {/* Privacy note */}
-          <View style={styles.privacyRow}>
-            <Text style={{ fontSize: 14 }}>🔒</Text>
-            <Text style={styles.privacyText}>
-              Your manual entry stays private and local.
-            </Text>
-          </View>
-
-          {/* Save button */}
-          <TouchableOpacity
-            style={[styles.saveBigBtn, shadow.strong]}
-            onPress={handleSubmit}
-            disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator color="#FFFFFF" />
-            ) : (
-              <Text style={styles.saveBigBtnText}>
-                Save {type === "debit" ? "Expense" : "Income"}
-              </Text>
-            )}
-          </TouchableOpacity>
-
-          <View style={{ height: spacing.xl }} />
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
+const S = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "#F8F9FB",
+  },
 
   header: {
     flexDirection: "row",
-    alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: spacing.screenPadding,
-    paddingVertical: spacing.md,
-    backgroundColor: colors.cardBackground,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    backgroundColor: "#FFFFFF",
   },
-  closeBtn: { padding: spacing.xs },
-  closeBtnText: {
-    fontSize: fontSize.xl,
-    color: colors.textSecondary,
-    fontFamily: font.regular,
+
+  closeBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#F3F4F6",
   },
-  headerTitle: {
+
+  closeText: {
+    fontSize: 14,
     fontFamily: font.bold,
-    fontSize: fontSize.lg,
+  },
+
+  headerTitle: {
+    fontSize: 17,
+    fontFamily: font.bold,
     color: colors.textPrimary,
   },
-  saveBtn: { padding: spacing.xs },
-  saveBtnText: {
+
+  headerSaveText: {
     fontFamily: font.bold,
-    fontSize: fontSize.md,
     color: colors.primary,
   },
 
   content: {
-    padding: spacing.screenPadding,
-    gap: spacing.sm,
+    padding: 20,
+    gap: 12,
   },
 
-  // Type toggle
+  modeToggle: {
+    flexDirection: "row",
+    backgroundColor: "#F3F4F6",
+    borderRadius: 100,
+    padding: 3,
+  },
+
+  modeBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: "center",
+    borderRadius: 100,
+  },
+
+  modeBtnActive: {
+    backgroundColor: "#FFFFFF",
+  },
+
+  modeBtnText: {
+    fontFamily: font.semibold,
+    color: "#6B7280",
+  },
+
+  modeBtnTextActive: {
+    color: colors.textPrimary,
+  },
+
+  orRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+
+  orLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: "#E5E7EB",
+  },
+
+  orText: {
+    fontSize: 11,
+    color: "#9CA3AF",
+  },
+
   typeRow: {
     flexDirection: "row",
-    gap: spacing.sm,
+    gap: 10,
   },
+
   typeBtn: {
     flex: 1,
-    flexDirection: "row",
+    padding: 14,
+    borderRadius: 14,
     alignItems: "center",
+    flexDirection: "row",
     justifyContent: "center",
-    gap: spacing.xs,
-    padding: spacing.md,
-    borderRadius: radius.lg,
-    backgroundColor: colors.cardBackground,
-    borderWidth: 1.5,
-    borderColor: colors.border,
+    gap: 6,
+    backgroundColor: "#FFFFFF",
   },
+
   typeDebitActive: {
-    borderColor: colors.primary,
     backgroundColor: "#EEF0FF",
   },
+
   typeCreditActive: {
-    borderColor: colors.success,
-    backgroundColor: colors.successLight,
+    backgroundColor: "#ECFDF5",
   },
-  typeBtnEmoji: { fontSize: 20 },
+
   typeBtnText: {
     fontFamily: font.semibold,
-    fontSize: fontSize.md,
-    color: colors.textSecondary,
   },
-  typeBtnTextActive: { color: colors.textPrimary },
 
-  // Amount
   fieldLabel: {
+    fontSize: 11,
     fontFamily: font.bold,
-    fontSize: fontSize.xs,
-    color: colors.textMuted,
-    letterSpacing: 0.8,
-    marginBottom: 4,
+    color: "#9CA3AF",
   },
+
   amountRow: {
     flexDirection: "row",
-    alignItems: "center",
     justifyContent: "center",
-    paddingVertical: spacing.md,
+    alignItems: "center",
   },
-  rupeeSign: {
+
+  rupee: {
+    fontSize: 42,
     fontFamily: font.bold,
-    fontSize: 44,
-    color: colors.textMuted,
-    marginRight: spacing.xs,
+    color: "#C4C9D4",
   },
+
   amountInput: {
+    fontSize: 52,
     fontFamily: font.extrabold,
-    fontSize: 56,
     color: colors.textPrimary,
     minWidth: 120,
     textAlign: "center",
   },
 
-  // Field cards
   fieldCard: {
-    backgroundColor: colors.cardBackground,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.border,
+    backgroundColor: "#FFFFFF",
+    padding: 16,
+    borderRadius: 14,
   },
-  fieldRow: { flexDirection: "row", alignItems: "center" },
+
   fieldInput: {
+    fontSize: 15,
     fontFamily: font.regular,
-    fontSize: fontSize.md,
     color: colors.textPrimary,
-    flex: 1,
-  },
-
-  // Category grid
-  catGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.sm,
-    marginBottom: spacing.sm,
-  },
-  catGridItem: {
-    width: "47%",
-    alignItems: "center",
-    padding: spacing.md,
-    backgroundColor: colors.cardBackground,
-    borderRadius: radius.lg,
-    borderWidth: 1.5,
-    borderColor: colors.border,
-    gap: spacing.xs,
-  },
-  catGridItemActive: {
-    borderColor: colors.primary,
-    backgroundColor: "#EEF0FF",
-  },
-  catGridIconWrap: {
-    width: 56,
-    height: 56,
-    borderRadius: radius.full,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  catGridName: {
-    fontFamily: font.semibold,
-    fontSize: fontSize.sm,
-    color: colors.textSecondary,
-    marginTop: 4,
-  },
-  otherCatsScroll: { marginBottom: spacing.xs },
-  catChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    backgroundColor: colors.cardBackground,
-    borderRadius: radius.full,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  catChipActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  catChipText: {
-    fontFamily: font.medium,
-    fontSize: fontSize.sm,
-    color: colors.textSecondary,
-  },
-
-  // Date
-  dateValue: {
-    fontFamily: font.semibold,
-    fontSize: fontSize.md,
-    color: colors.textPrimary,
-  },
-  dateChevron: {
-    fontSize: fontSize.xl,
-    color: colors.textMuted,
-  },
-  datePickerOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.4)",
-    justifyContent: "flex-end",
-  },
-  datePickerSheet: {
-    backgroundColor: colors.cardBackground,
-    borderTopLeftRadius: radius.xl,
-    borderTopRightRadius: radius.xl,
-    paddingBottom: 40,
-  },
-  datePickerHeader: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    padding: spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  datePickerDone: {
-    fontFamily: font.bold,
-    fontSize: fontSize.md,
-    color: colors.primary,
-  },
-
-  // Notes + privacy
-  privacyRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: spacing.xs,
-    marginTop: spacing.xs,
-  },
-  privacyText: {
-    fontFamily: font.medium,
-    fontSize: fontSize.xs,
-    color: colors.accent,
-  },
-
-  // Save button
-  saveBigBtn: {
-    backgroundColor: colors.primary,
-    padding: spacing.lg,
-    borderRadius: radius.xl,
-    alignItems: "center",
-    marginTop: spacing.sm,
-  },
-  saveBigBtnText: {
-    fontFamily: font.bold,
-    fontSize: fontSize.lg,
-    color: "#FFFFFF",
   },
 });
