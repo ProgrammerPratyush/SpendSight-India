@@ -6,6 +6,7 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const mongoose = require('mongoose');
+const { startInsightEngine } = require('./jobs/insightEngine');
 
 // Route imports
 const authRoutes = require('./routes/auth');
@@ -116,6 +117,8 @@ app.use(apiLimiter);
 mongoose.connect(process.env.MONGODB_URI)
     .then(() => {
         logger.info('MongoDB Atlas connected');
+
+        startInsightEngine();
     })
     .catch((err) => {
         logger.error('MongoDB connection failed', {
