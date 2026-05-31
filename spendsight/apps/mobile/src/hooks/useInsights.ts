@@ -20,7 +20,7 @@ export function useInsights() {
             const res = await apiClient.get('/api/insights');
             setInsights(res.data.data.insights || []);
         } catch (err) {
-            logger.info('Insights fetch error:', err);
+            console.error('Insights fetch error:', err);
         } finally {
             setIsLoading(false);
         }
@@ -30,7 +30,7 @@ export function useInsights() {
         try {
             await apiClient.patch(`/api/insights/${id}/read`);
         } catch (err) {
-            logger.info('Mark read error:', err);
+            console.error('Mark read error:', err);
         }
     }, []);
 

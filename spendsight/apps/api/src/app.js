@@ -7,6 +7,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const mongoose = require('mongoose');
 const { startInsightEngine } = require('./jobs/insightEngine');
+const adminRoutes = require('./routes/admin');
 
 // Route imports
 const authRoutes = require('./routes/auth');
@@ -182,6 +183,13 @@ app.use(
     '/api/categories',
     authMiddleware,
     categoryRoutes
+);
+
+// For Insight Engine Testing with manual way
+app.use(
+    '/api/admin',
+    authMiddleware,
+    adminRoutes
 );
 
 //

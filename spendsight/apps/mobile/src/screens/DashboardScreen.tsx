@@ -7,6 +7,7 @@ import {
   StyleSheet,
   RefreshControl,
   ActivityIndicator,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
@@ -23,6 +24,7 @@ import { useAuthStore } from "../store/authStore";
 import { useTransactions } from "../hooks/useTransactions";
 import { useInsights } from "../hooks/useInsights";
 import { Period } from "../store/transactionStore";
+import apiClient from "../services/apiClient";
 
 const PERIOD_LABELS: Record<Period, string> = {
   today: "Total spent today",
@@ -56,6 +58,28 @@ export default function DashboardScreen({ navigation }: any) {
   } = useTransactions();
   const { insights, fetchInsights } = useInsights();
   const [refreshing, setRefreshing] = useState(false);
+
+  const runInsights = async () => {
+    try {
+      const response = await apiClient.post("/api/admin/run-insights");
+
+      const result = response.data;
+
+      Alert.alert(
+        "Insight Engine",
+        `Created ${result.insightsCreated} insights`,
+      );
+
+      await fetchInsights();
+    } catch (err: any) {
+      console.log("Insight generation failed", err);
+
+      Alert.alert(
+        "Error",
+        err?.response?.data?.error || "Failed to generate insights",
+      );
+    }
+  };
 
   useEffect(() => {
     fetchTransactions();
@@ -180,6 +204,10 @@ export default function DashboardScreen({ navigation }: any) {
             </Text>
           </View>
         </View>
+        {/* Adding the run insights button */}
+        <TouchableOpacity onPress={runInsights} style={styles.debugButton}>
+          <Text style={styles.debugButtonText}>Generate Insights</Text>
+        </TouchableOpacity>
 
         {/* Category breakdown */}
         <View style={styles.sectionRow}>
@@ -633,5 +661,19 @@ const styles = StyleSheet.create({
     fontFamily: font.regular,
     lineHeight: 36,
     textAlign: "center",
+  },
+  debugButton: {
+    backgroundColor: "#0A1172",
+    marginHorizontal: spacing.screenPadding,
+    marginBottom: spacing.md,
+    paddingVertical: 12,
+    borderRadius: radius.md,
+  },
+
+  debugButtonText: {
+    color: "#FFFFFF",
+    textAlign: "center",
+    fontFamily: font.bold,
+    fontSize: fontSize.md,
   },
 });

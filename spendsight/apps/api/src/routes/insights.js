@@ -19,8 +19,14 @@ router.get('/', async (req, res, next) => {
 
         // If no stored insights yet, generate a live one on the fly
         if (insights.length === 0) {
+
             const today = new Date();
-            const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+
+            const startOfMonth = new Date(
+                today.getFullYear(),
+                today.getMonth(),
+                1
+            );
 
             const transactions = await Transaction.find({
                 userId: user._id,
@@ -29,18 +35,30 @@ router.get('/', async (req, res, next) => {
                 status: 'completed',
             });
 
-            const totalPaise = transactions.reduce((sum, tx) => sum + tx.amount, 0);
-            const totalRupees = Math.round(totalPaise / 100);
+            const totalPaise =
+                transactions.reduce(
+                    (sum, tx) => sum + tx.amount,
+                    0
+                );
 
-            const liveInsight = {
-                type: 'daily_digest',
-                text: totalRupees > 0
-                    ? `You have spent Rs ${totalRupees.toLocaleString('en-IN')} so far this month.`
-                    : 'No transactions recorded yet. Add your first transaction to get started.',
-                data: { totalRupees, transactionCount: transactions.length },
-            };
+            const totalRupees =
+                Math.round(totalPaise / 100);
 
-            return res.json({ data: { insights: [liveInsight], live: true } });
+            return res.json({
+                data: {
+                    insights: [
+                        {
+                            type: 'system',
+                            text:
+                                totalRupees > 0
+                                    ? `No generated insights found. Current spend this month: ₹${totalRupees.toLocaleString('en-IN')}`
+                                    : 'No transactions available.',
+                        },
+                    ],
+                    live: true,
+                    insightCount: 0,
+                },
+            });
         }
 
         res.json({ data: { insights, live: false } });

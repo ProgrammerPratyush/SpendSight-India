@@ -40,6 +40,15 @@ async function generateInsightsForUser(userId) {
         },
     });
 
+    console.log(
+        '[INSIGHTS] Transactions:',
+        JSON.stringify(todayTransactions, null, 2)
+    );
+    console.log(
+        '[INSIGHTS] Spend:',
+        todaySpend
+    );
+
     const todaySpend = todayTransactions.reduce(
         (sum, tx) => sum + tx.amount,
         0
