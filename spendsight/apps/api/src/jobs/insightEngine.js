@@ -44,10 +44,6 @@ async function generateInsightsForUser(userId) {
         '[INSIGHTS] Transactions:',
         JSON.stringify(todayTransactions, null, 2)
     );
-    console.log(
-        '[INSIGHTS] Spend:',
-        todaySpend
-    );
 
     const todaySpend = todayTransactions.reduce(
         (sum, tx) => sum + tx.amount,
@@ -79,6 +75,10 @@ async function generateInsightsForUser(userId) {
             createdCount++;
         }
     }
+    console.log(
+        '[INSIGHTS] Spend:',
+        todaySpend
+    );
 
     //
     // BUDGET ALERTS

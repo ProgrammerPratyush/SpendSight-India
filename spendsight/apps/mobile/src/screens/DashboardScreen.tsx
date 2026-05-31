@@ -59,6 +59,7 @@ export default function DashboardScreen({ navigation }: any) {
   const { insights, fetchInsights } = useInsights();
   const [refreshing, setRefreshing] = useState(false);
 
+  // Run insight code
   const runInsights = async () => {
     try {
       const response = await apiClient.post("/api/admin/run-insights");
