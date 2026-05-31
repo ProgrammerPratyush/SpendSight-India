@@ -10,6 +10,14 @@ const authMiddleware = require('../middleware/authMiddleware');
 // Returns latest insights for the user
 router.get('/', async (req, res, next) => {
     try {
+        // Disable caching to ensure fresh insights are always returned
+        res.set(
+            "Cache-Control",
+            "no-store, no-cache, must-revalidate, proxy-revalidate"
+        );
+        res.set("Pragma", "no-cache");
+        res.set("Expires", "0");
+
         const user = await User.findOne({ firebaseUid: req.userId });
         if (!user) return res.status(404).json({ error: 'User not found' });
 
@@ -19,7 +27,6 @@ router.get('/', async (req, res, next) => {
 
         // If no stored insights yet, generate a live one on the fly
         if (insights.length === 0) {
-
             const today = new Date();
 
             const startOfMonth = new Date(

@@ -7,6 +7,7 @@ import { useAuthStore } from "./src/store/authStore";
 import AppNavigator from "./src/navigation/AppNavigator";
 import apiClient from "./src/services/apiClient";
 import { View, ActivityIndicator } from "react-native";
+import "react-native-gesture-handler";
 import {
   useFonts,
   Inter_400Regular,

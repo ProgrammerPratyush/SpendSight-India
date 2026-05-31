@@ -57,6 +57,29 @@ export function useTransactions() {
         }
     }, [fetchTransactions]);
 
+    // update transaction and delete transaction functions can be added similarly
+    const updateTransaction = async (
+        id: string,
+        payload: any
+    ) => {
+        try {
+            const res = await apiClient.put(
+                `/api/transactions/${id}`,
+                payload
+            );
+
+            return {
+                success: true,
+                data: res.data.data,
+            };
+        } catch (err: any) {
+            return {
+                success: false,
+                error: err.message,
+            };
+        }
+    };
+
     return {
         transactions,
         totals,
@@ -66,5 +89,6 @@ export function useTransactions() {
         fetchTransactions,
         changePeriod,
         createTransaction,
+        updateTransaction,
     };
 }

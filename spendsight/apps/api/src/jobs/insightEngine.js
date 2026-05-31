@@ -141,6 +141,139 @@ async function generateInsightsForUser(userId) {
             }
         }
     }
+    //
+    // RECURRING EXPENSE DETECTION
+    //
+
+    const sixMonthsAgo = new Date(
+        now.getFullYear(),
+        now.getMonth() - 6,
+        now.getDate()
+    );
+
+    const recurringTransactions =
+        await Transaction.find({
+            userId,
+            type: 'debit',
+            status: 'completed',
+            txDate: {
+                $gte: sixMonthsAgo,
+            },
+        }).sort({
+            merchantNormalised: 1,
+            txDate: 1,
+        });
+
+    const merchantMap = {};
+
+    for (const tx of recurringTransactions) {
+        const merchant =
+            tx.merchantNormalised?.trim();
+
+        if (!merchant) continue;
+
+        if (!merchantMap[merchant]) {
+            merchantMap[merchant] = [];
+        }
+
+        merchantMap[merchant].push(tx);
+    }
+
+    const recurringMerchants = [];
+
+    for (const merchant of Object.keys(merchantMap)) {
+        const txs = merchantMap[merchant];
+
+        if (txs.length < 3) continue;
+
+        let monthlyPattern = true;
+
+        for (let i = 1; i < txs.length; i++) {
+            const diffDays =
+                Math.abs(
+                    txs[i].txDate -
+                    txs[i - 1].txDate
+                ) /
+                (1000 * 60 * 60 * 24);
+
+            if (
+                diffDays < 25 ||
+                diffDays > 35
+            ) {
+                monthlyPattern = false;
+                break;
+            }
+        }
+
+        if (!monthlyPattern) continue;
+
+        const avgAmount =
+            txs.reduce(
+                (sum, tx) => sum + tx.amount,
+                0
+            ) / txs.length;
+
+        const amountsSimilar =
+            txs.every((tx) => {
+                const variance =
+                    Math.abs(
+                        tx.amount - avgAmount
+                    ) / avgAmount;
+
+                return variance <= 0.10;
+            });
+
+        if (!amountsSimilar) continue;
+
+        recurringMerchants.push({
+            merchant,
+            monthlyCost: Math.round(avgAmount),
+            count: txs.length,
+        });
+    }
+
+    if (recurringMerchants.length > 0) {
+        const existing =
+            await Insight.findOne({
+                userId,
+                type: 'recurring_detected',
+                createdAt: {
+                    $gte: startOfMonth,
+                },
+            });
+
+        if (!existing) {
+            const totalRecurringCost =
+                recurringMerchants.reduce(
+                    (sum, item) =>
+                        sum + item.monthlyCost,
+                    0
+                );
+
+            await Insight.create({
+                userId,
+                type:
+                    'recurring_detected',
+
+                text:
+                    recurringMerchants.length === 1
+                        ? `Recurring expense detected: ${recurringMerchants[0].merchant} costs approximately ${formatRupees(recurringMerchants[0].monthlyCost)} per month.`
+                        : `You have ${recurringMerchants.length} recurring expenses costing approximately ${formatRupees(totalRecurringCost)} per month.`,
+
+                data: {
+                    recurringMerchants,
+                    totalRecurringCost,
+                },
+
+                period: {
+                    start: sixMonthsAgo,
+                    end: now,
+                },
+            });
+
+            createdCount++;
+        }
+    }
 
     return createdCount;
 }

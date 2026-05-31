@@ -14,6 +14,8 @@ import BudgetScreen from "../screens/BudgetScreen";
 import SettingsScreen from "../screens/SettingsScreen";
 import AddTransactionScreen from "../screens/AddTransactionScreen";
 import CategoryDetailScreen from "../screens/CategoryDetailScreen";
+import EditTransactionScreen from "../screens/EditTransactionScreen";
+import TransactionDetailScreen from "../screens/TransactionDetailScreen";
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
@@ -112,7 +114,12 @@ function AppStack() {
         component={AddTransactionScreen}
         options={{ presentation: "modal" }}
       />
+      <Stack.Screen name="EditTransaction" component={EditTransactionScreen} />
       <Stack.Screen name="CategoryDetail" component={CategoryDetailScreen} />
+      <Stack.Screen
+        name="TransactionDetail"
+        component={TransactionDetailScreen}
+      />
     </Stack.Navigator>
   );
 }

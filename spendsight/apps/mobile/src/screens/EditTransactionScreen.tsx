@@ -53,17 +53,27 @@ const FALLBACK_CATS: Category[] = [
 
 const TOP_CAT_NAMES = ["Food & Dining", "Shopping", "Travel", "Utilities"];
 
-export default function AddTransactionScreen({ navigation }: any) {
-  const { createTransaction } = useTransactions();
+export default function AddTransactionScreen({ navigation, route }: any) {
+  const { createTransaction, updateTransaction } = useTransactions();
 
-  const [amount, setAmount] = useState("");
-  const [merchant, setMerchant] = useState("");
-  const [notes, setNotes] = useState("");
+  // Extract transaction from route params (if editing)
+  const { transaction } = route.params || {};
+  const isEditMode = !!transaction;
 
-  const [type, setType] = useState<"debit" | "credit">("debit");
+  const [amount, setAmount] = useState(
+    transaction ? String(transaction.amount / 100) : "",
+  );
+  const [merchant, setMerchant] = useState(
+    transaction?.merchantNormalised || "",
+  );
+  const [notes, setNotes] = useState(transaction?.notes || "");
+
+  const [type, setType] = useState<"debit" | "credit">(
+    transaction?.type || "debit",
+  );
 
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(
-    null,
+    transaction?.categoryId || null,
   );
 
   const [categories, setCategories] = useState<Category[]>(FALLBACK_CATS);
@@ -71,11 +81,15 @@ export default function AddTransactionScreen({ navigation }: any) {
   const [loadingCats, setLoadingCats] = useState(true);
   const [loading, setLoading] = useState(false);
 
-  const [txDate, setTxDate] = useState(new Date());
+  const [txDate, setTxDate] = useState(
+    transaction ? new Date(transaction.txDate) : new Date(),
+  );
 
   const [showDatePicker, setShowDatePicker] = useState(false);
 
-  const [nlpActive, setNlpActive] = useState(Platform.OS === "ios");
+  const [nlpActive, setNlpActive] = useState(
+    Platform.OS === "ios" && !isEditMode,
+  );
 
   // Fetch categories
   useEffect(() => {
@@ -200,7 +214,13 @@ export default function AddTransactionScreen({ navigation }: any) {
 
       console.log("TX PAYLOAD:", payload);
 
-      const result = await createTransaction(payload);
+      let result;
+      if (isEditMode) {
+        result = await updateTransaction(transaction._id, payload);
+      } else {
+        // create a new transaction when not in edit mode
+        result = await createTransaction(payload);
+      }
 
       if (result.success) {
         navigation.goBack();
@@ -233,7 +253,9 @@ export default function AddTransactionScreen({ navigation }: any) {
             <Text style={S.closeText}>✕</Text>
           </TouchableOpacity>
 
-          <Text style={S.headerTitle}>Add Transaction</Text>
+          <Text style={S.headerTitle}>
+            {isEditMode ? "Edit Transaction" : "Add Transaction"}
+          </Text>
 
           <TouchableOpacity onPress={handleSubmit} disabled={loading}>
             {loading ? (
@@ -249,29 +271,33 @@ export default function AddTransactionScreen({ navigation }: any) {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          {/* Smart / Manual Toggle */}
-          <View style={S.modeToggle}>
-            <TouchableOpacity
-              style={[S.modeBtn, nlpActive && S.modeBtnActive]}
-              onPress={() => setNlpActive(true)}
-            >
-              <Text style={[S.modeBtnText, nlpActive && S.modeBtnTextActive]}>
-                ✨ Smart
-              </Text>
-            </TouchableOpacity>
+          {/* Smart / Manual Toggle - Only show in Add mode */}
+          {!isEditMode && (
+            <View style={S.modeToggle}>
+              <TouchableOpacity
+                style={[S.modeBtn, nlpActive && S.modeBtnActive]}
+                onPress={() => setNlpActive(true)}
+              >
+                <Text style={[S.modeBtnText, nlpActive && S.modeBtnTextActive]}>
+                  ✨ Smart
+                </Text>
+              </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[S.modeBtn, !nlpActive && S.modeBtnActive]}
-              onPress={() => setNlpActive(false)}
-            >
-              <Text style={[S.modeBtnText, !nlpActive && S.modeBtnTextActive]}>
-                ✏️ Manual
-              </Text>
-            </TouchableOpacity>
-          </View>
+              <TouchableOpacity
+                style={[S.modeBtn, !nlpActive && S.modeBtnActive]}
+                onPress={() => setNlpActive(false)}
+              >
+                <Text
+                  style={[S.modeBtnText, !nlpActive && S.modeBtnTextActive]}
+                >
+                  ✏️ Manual
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
-          {/* NLP Input */}
-          {nlpActive && (
+          {/* NLP Input - Only show in Add mode */}
+          {nlpActive && !isEditMode && (
             <>
               <NLPInput
                 categories={categories}
@@ -333,8 +359,8 @@ export default function AddTransactionScreen({ navigation }: any) {
               onChangeText={setMerchant}
             />
           </View>
-          {/* Transaction Date */}
 
+          {/* Transaction Date */}
           <Text style={S.fieldLabel}>TRANSACTION DATE</Text>
 
           <TouchableOpacity
@@ -359,6 +385,40 @@ export default function AddTransactionScreen({ navigation }: any) {
               }}
             />
           )}
+
+          {/* Notes */}
+          <View style={[S.fieldCard, shadow.card]}>
+            <Text style={S.fieldLabel}>NOTES (OPTIONAL)</Text>
+
+            <TextInput
+              style={S.fieldInput}
+              placeholder="Add any notes..."
+              value={notes}
+              onChangeText={setNotes}
+              multiline
+              numberOfLines={3}
+            />
+          </View>
+
+          {/* Category Selection */}
+          <Text style={S.fieldLabel}>CATEGORY</Text>
+
+          <View style={S.categoryGrid}>
+            {categories.map((cat) => (
+              <TouchableOpacity
+                key={cat._id}
+                style={[
+                  S.categoryChip,
+                  selectedCategory?._id === cat._id && S.categoryChipActive,
+                  { backgroundColor: cat.color || "#F3F4F6" },
+                ]}
+                onPress={() => setSelectedCategory(cat)}
+              >
+                <Text style={S.categoryIcon}>{cat.icon}</Text>
+                <Text style={S.categoryName}>{cat.name}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -486,6 +546,7 @@ const S = StyleSheet.create({
     fontSize: 11,
     fontFamily: font.bold,
     color: "#9CA3AF",
+    marginTop: 8,
   },
 
   dateText: {
@@ -523,6 +584,37 @@ const S = StyleSheet.create({
   fieldInput: {
     fontSize: 15,
     fontFamily: font.regular,
+    color: colors.textPrimary,
+  },
+
+  categoryGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+
+  categoryChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    borderWidth: 2,
+    borderColor: "transparent",
+  },
+
+  categoryChipActive: {
+    borderColor: colors.primary,
+  },
+
+  categoryIcon: {
+    fontSize: 18,
+  },
+
+  categoryName: {
+    fontSize: 13,
+    fontFamily: font.semibold,
     color: colors.textPrimary,
   },
 });

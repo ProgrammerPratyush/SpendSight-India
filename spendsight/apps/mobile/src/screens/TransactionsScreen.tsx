@@ -7,8 +7,10 @@ import {
   StyleSheet,
   RefreshControl,
   TextInput,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import Swipeable from "react-native-gesture-handler/Swipeable";
 import {
   colors,
   font,
@@ -21,6 +23,7 @@ import { formatCurrency } from "../utils/formatCurrency";
 import { formatTransactionDate } from "../utils/dateHelpers";
 import { useTransactions } from "../hooks/useTransactions";
 import { Transaction } from "../store/transactionStore";
+import apiClient from "../services/apiClient";
 
 const CAT_BG: Record<string, string> = {
   "Food & Dining": "#FFF4E6",
@@ -30,10 +33,16 @@ const CAT_BG: Record<string, string> = {
   Entertainment: "#FFF8E1",
   Health: "#FEE8E8",
   Groceries: "#F0FDF4",
+  Subscriptions: "#E0F2FE",
   Other: "#F8F9FC",
 };
 
-const FILTERS = ["All", "Food", "Shopping", "Bills", "Travel"];
+interface Category {
+  _id: string;
+  name: string;
+  icon: string;
+  color?: string;
+}
 
 export default function TransactionsScreen({ navigation }: any) {
   const {
@@ -47,24 +56,80 @@ export default function TransactionsScreen({ navigation }: any) {
   const [search, setSearch] = useState("");
   const [activeFilter, setActiveFilter] = useState("All");
   const [refreshing, setRefreshing] = useState(false);
+  const [categories, setCategories] = useState<Category[]>([]);
 
   useEffect(() => {
     fetchTransactions();
+    loadCategories();
   }, []);
+
+  async function loadCategories() {
+    try {
+      const res = await apiClient.get("/api/categories");
+      setCategories(res.data.data.categories || []);
+    } catch (err) {
+      console.log("Failed to load categories:", err);
+    }
+  }
 
   async function onRefresh() {
     setRefreshing(true);
-    await fetchTransactions();
+    await Promise.all([fetchTransactions(), loadCategories()]);
     setRefreshing(false);
   }
+
+  function handleDelete(id: string) {
+    Alert.alert("Delete Transaction", "This action cannot be undone.", [
+      {
+        text: "Cancel",
+        style: "cancel",
+      },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await apiClient.delete(`/api/transactions/${id}`);
+            await fetchTransactions();
+          } catch (err) {
+            Alert.alert("Error", "Failed to delete transaction");
+          }
+        },
+      },
+    ]);
+  }
+
+  const renderLeftActions = (tx: Transaction) => (
+    <TouchableOpacity
+      style={styles.editAction}
+      onPress={() =>
+        navigation.navigate("EditTransaction", {
+          transaction: tx,
+        })
+      }
+    >
+      <Text style={styles.actionText}>✏️ Edit</Text>
+    </TouchableOpacity>
+  );
+
+  const renderRightActions = (tx: Transaction) => (
+    <TouchableOpacity
+      style={styles.deleteAction}
+      onPress={() => handleDelete(tx._id)}
+    >
+      <Text style={styles.actionText}>🗑 Delete</Text>
+    </TouchableOpacity>
+  );
+
+  // Generate dynamic filters
+  const filters = ["All", ...categories.map((c) => c.name)];
 
   const filtered = transactions.filter((tx) => {
     const matchSearch = (tx.merchantNormalised || tx.merchantRaw || "")
       .toLowerCase()
       .includes(search.toLowerCase());
     const matchFilter =
-      activeFilter === "All" ||
-      (tx.categoryId?.name || "").includes(activeFilter);
+      activeFilter === "All" || tx.categoryId?.name === activeFilter;
     return matchSearch && matchFilter;
   });
 
@@ -100,25 +165,31 @@ export default function TransactionsScreen({ navigation }: any) {
 
       {/* Filter chips */}
       <View style={styles.filterRow}>
-        {FILTERS.map((f) => (
-          <TouchableOpacity
-            key={f}
-            style={[
-              styles.filterChip,
-              activeFilter === f && styles.filterChipActive,
-            ]}
-            onPress={() => setActiveFilter(f)}
-          >
-            <Text
+        <FlatList
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          data={filters}
+          keyExtractor={(item) => item}
+          contentContainerStyle={{ gap: spacing.xs }}
+          renderItem={({ item: f }) => (
+            <TouchableOpacity
               style={[
-                styles.filterText,
-                activeFilter === f && styles.filterTextActive,
+                styles.filterChip,
+                activeFilter === f && styles.filterChipActive,
               ]}
+              onPress={() => setActiveFilter(f)}
             >
-              {f}
-            </Text>
-          </TouchableOpacity>
-        ))}
+              <Text
+                style={[
+                  styles.filterText,
+                  activeFilter === f && styles.filterTextActive,
+                ]}
+              >
+                {f}
+              </Text>
+            </TouchableOpacity>
+          )}
+        />
       </View>
 
       {/* Search */}
@@ -166,72 +237,84 @@ export default function TransactionsScreen({ navigation }: any) {
             <View style={[styles.groupCard, shadow.card]}>
               {group.txs.map((tx, i) => (
                 <View key={tx._id}>
-                  <View style={styles.txRow}>
-                    <View
-                      style={[
-                        styles.txIcon,
-                        {
-                          backgroundColor:
-                            CAT_BG[tx.categoryId?.name || ""] || "#F3F4F6",
-                        },
-                      ]}
+                  <Swipeable
+                    renderLeftActions={() => renderLeftActions(tx)}
+                    renderRightActions={() => renderRightActions(tx)}
+                  >
+                    <TouchableOpacity
+                      style={styles.txRow}
+                      onPress={() =>
+                        navigation.navigate("TransactionDetail", {
+                          transactionId: tx._id,
+                        })
+                      }
                     >
-                      <Text style={{ fontSize: 18 }}>
-                        {tx.categoryId?.icon || "💰"}
-                      </Text>
-                    </View>
-                    <View style={styles.txInfo}>
-                      <Text style={styles.txMerchant} numberOfLines={1}>
-                        {tx.merchantNormalised ||
-                          tx.merchantRaw ||
-                          "Transaction"}
-                      </Text>
-                      <Text style={styles.txMeta}>
-                        {tx.categoryId?.name || "Uncategorised"}
-                      </Text>
-                    </View>
-                    <View style={styles.txRight}>
-                      <Text
-                        style={[
-                          styles.txAmount,
-                          {
-                            color:
-                              tx.type === "credit"
-                                ? colors.success
-                                : colors.textPrimary,
-                          },
-                        ]}
-                      >
-                        {tx.type === "credit" ? "+" : ""}₹
-                        {(tx.amount / 100).toLocaleString("en-IN")}
-                      </Text>
                       <View
                         style={[
-                          styles.statusBadge,
+                          styles.txIcon,
                           {
                             backgroundColor:
-                              tx.type === "credit"
-                                ? colors.successLight
-                                : colors.borderLight,
+                              CAT_BG[tx.categoryId?.name || ""] || "#F3F4F6",
                           },
                         ]}
                       >
+                        <Text style={{ fontSize: 18 }}>
+                          {tx.categoryId?.icon || "💰"}
+                        </Text>
+                      </View>
+                      <View style={styles.txInfo}>
+                        <Text style={styles.txMerchant} numberOfLines={1}>
+                          {tx.merchantNormalised ||
+                            tx.merchantRaw ||
+                            "Transaction"}
+                        </Text>
+                        <Text style={styles.txMeta}>
+                          {tx.categoryId?.name || "Uncategorised"}
+                        </Text>
+                      </View>
+                      <View style={styles.txRight}>
                         <Text
                           style={[
-                            styles.statusText,
+                            styles.txAmount,
                             {
                               color:
                                 tx.type === "credit"
                                   ? colors.success
-                                  : colors.textMuted,
+                                  : colors.textPrimary,
                             },
                           ]}
                         >
-                          {tx.status.toUpperCase()}
+                          {tx.type === "credit" ? "+" : ""}₹
+                          {(tx.amount / 100).toLocaleString("en-IN")}
                         </Text>
+                        <View
+                          style={[
+                            styles.statusBadge,
+                            {
+                              backgroundColor:
+                                tx.type === "credit"
+                                  ? colors.successLight
+                                  : colors.borderLight,
+                            },
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.statusText,
+                              {
+                                color:
+                                  tx.type === "credit"
+                                    ? colors.success
+                                    : colors.textMuted,
+                              },
+                            ]}
+                          >
+                            {tx.status.toUpperCase()}
+                          </Text>
+                        </View>
                       </View>
-                    </View>
-                  </View>
+                    </TouchableOpacity>
+                  </Swipeable>
                   {i < group.txs.length - 1 && <View style={styles.divider} />}
                 </View>
               ))}
@@ -290,10 +373,8 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
   },
   filterRow: {
-    flexDirection: "row",
     paddingHorizontal: spacing.screenPadding,
     paddingVertical: spacing.sm,
-    gap: spacing.xs,
   },
   filterChip: {
     paddingHorizontal: spacing.md,
@@ -360,6 +441,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     padding: spacing.md,
     gap: spacing.sm,
+    backgroundColor: colors.cardBackground,
   },
   txIcon: {
     width: 44,
@@ -411,5 +493,27 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontFamily: font.regular,
     marginTop: -2,
+  },
+  // Swipe action styles
+  editAction: {
+    backgroundColor: colors.primary,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: spacing.xl,
+    borderRadius: radius.md,
+    marginVertical: 1,
+  },
+  deleteAction: {
+    backgroundColor: "#DC2626",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: spacing.xl,
+    borderRadius: radius.md,
+    marginVertical: 1,
+  },
+  actionText: {
+    color: "#FFFFFF",
+    fontFamily: font.bold,
+    fontSize: fontSize.sm,
   },
 });
