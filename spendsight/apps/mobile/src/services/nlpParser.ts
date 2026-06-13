@@ -3,16 +3,17 @@
 // Handles 80%+ of real user inputs
 
 export interface ParsedTransaction {
-    amount: number | null;
-    merchant: string;
-    merchantNormalised: string;
-    categoryId: string | null;
-    categoryName: string;
-    categoryIcon: string;
-    type: 'debit' | 'credit';
+    amount: number;
+    merchant?: string;
+    merchantNormalised?: string;
+    categoryId?: string;
+    categoryName?: string;
+    categoryIcon?: string;
+    type: "debit" | "credit";
     txDate: Date;
-    confidence: number; // 0–1
-    rawInput: string;
+    confidence: number;
+    rawInput?: string;
+    source?: "nlp_tier1" | "nlp_tier2"; // Added this
 }
 
 // ── Indian merchant dictionary ─────────────────────────────────────────────
@@ -184,10 +185,10 @@ export function parseNaturalLanguage(
     const lower = raw.toLowerCase().replace(/[₹,]/g, '');
 
     const result: ParsedTransaction = {
-        amount: null,
+        amount: 0,
         merchant: '',
         merchantNormalised: '',
-        categoryId: null,
+        categoryId: undefined,
         categoryName: 'Other',
         categoryIcon: '💰',
         type: 'debit',
@@ -289,7 +290,7 @@ export function getParsePreview(parsed: ParsedTransaction): string {
     const parts: string[] = [];
     if (parsed.merchantNormalised) parts.push(parsed.merchantNormalised);
     if (parsed.amount) parts.push(`₹${parsed.amount.toLocaleString('en-IN')}`);
-    if (parsed.categoryName !== 'Other') parts.push(parsed.categoryName);
+    if (parsed.categoryName && parsed.categoryName !== 'Other') parts.push(parsed.categoryName);
 
     return parts.join(' · ');
 }

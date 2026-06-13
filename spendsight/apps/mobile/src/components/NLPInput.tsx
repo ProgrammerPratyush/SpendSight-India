@@ -9,6 +9,7 @@ import {
 } from "react-native";
 
 import { colors, font, fontSize, spacing, radius } from "../utils/theme";
+import apiClient from "../services/apiClient";
 
 import {
   parseNaturalLanguage,
@@ -35,15 +36,41 @@ const SUGGESTIONS = [
   "Salary 50000",
 ];
 
+// Claude Response Mapper
+function mapClaudeResult(
+  data: any,
+  categories: any[],
+  rawInput: string,
+): ParsedTransaction {
+  const cat = categories.find(
+    (c) =>
+      c._id === data.categoryId ||
+      c.name?.toLowerCase() === data.category?.toLowerCase(),
+  );
+
+  return {
+    amount: data.amount,
+    merchant: data.merchant,
+    merchantNormalised: data.merchantNormalised || data.merchant,
+    categoryId: cat?._id,
+    categoryName: cat?.name || data.category,
+    categoryIcon: cat?.icon || "💰",
+    type: data.type || "debit",
+    txDate: data.txDate ? new Date(data.txDate) : new Date(),
+    confidence: data.confidence || 0.8,
+    rawInput,
+    source: "nlp_tier2", // Mark as Claude-parsed
+  };
+}
+
 export default function NLPInput({ categories, onParsed, onClear }: Props) {
   const [text, setText] = useState("");
   const [preview, setPreview] = useState("");
   const [parsed, setParsed] = useState<ParsedTransaction | null>(null);
-
   const [focused, setFocused] = useState(false);
+  const [isParsing, setIsParsing] = useState(false);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
-
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -54,7 +81,47 @@ export default function NLPInput({ categories, onParsed, onClear }: Props) {
     };
   }, []);
 
-  function runParser(value: string) {
+  // Claude Parser Function
+  async function parseWithClaude(value: string) {
+    try {
+      setIsParsing(true);
+
+      const res = await apiClient.post("/api/parse/transaction", {
+        text: value,
+      });
+
+      const data = res.data?.data;
+
+      if (!data?.amount) {
+        return;
+      }
+
+      const result = mapClaudeResult(data, categories, value);
+
+      setParsed(result);
+
+      const previewText = getParsePreview(result);
+
+      setPreview(previewText);
+
+      onParsed(result);
+
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 180,
+        useNativeDriver: true,
+      }).start();
+
+      console.log("Claude Tier-2 Success");
+    } catch (err) {
+      console.log("Claude parse failed:", err);
+    } finally {
+      setIsParsing(false);
+    }
+  }
+
+  // Updated runParser with Tier-1 and Tier-2 fallback
+  async function runParser(value: string) {
     const result = parseNaturalLanguage(value, categories);
 
     setParsed(result);
@@ -63,6 +130,7 @@ export default function NLPInput({ categories, onParsed, onClear }: Props) {
 
     setPreview(previewText);
 
+    // Tier 1 Success
     if (result.confidence >= 0.4 && result.amount) {
       onParsed(result);
 
@@ -71,6 +139,13 @@ export default function NLPInput({ categories, onParsed, onClear }: Props) {
         duration: 180,
         useNativeDriver: true,
       }).start();
+
+      return;
+    }
+
+    // Tier 2 Claude Fallback
+    if (value.trim().split(" ").length >= 3) {
+      await parseWithClaude(value);
     }
   }
 
@@ -90,30 +165,30 @@ export default function NLPInput({ categories, onParsed, onClear }: Props) {
 
     debounceRef.current = setTimeout(() => {
       runParser(value);
-    }, 250);
+    }, 700);
   }
 
-  function handleSuggestion(s: string) {
+  async function handleSuggestion(s: string) {
     setText(s);
-
-    runParser(s);
+    await runParser(s);
   }
 
   function clearInput() {
     setText("");
     setPreview("");
     setParsed(null);
-
     fadeAnim.setValue(0);
-
     onClear();
   }
+
+  // Determine if parsed by Claude
+  const isClaudeParsed = parsed?.source === "nlp_tier2";
 
   return (
     <View style={styles.container}>
       <Text style={styles.label}>SMART INPUT</Text>
 
-      <Text style={styles.subLabel}>Type naturally and we’ll auto-fill</Text>
+      <Text style={styles.subLabel}>Type naturally and we'll auto-fill</Text>
 
       <View style={[styles.inputContainer, focused && styles.inputFocused]}>
         <Text style={styles.sparkle}>✨</Text>
@@ -159,8 +234,26 @@ export default function NLPInput({ categories, onParsed, onClear }: Props) {
             {parsed?.categoryIcon || "💰"}
           </Text>
 
-          <Text style={styles.previewText}>{preview}</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.previewText}>{preview}</Text>
+            {isClaudeParsed && (
+              <Text style={styles.claudeBadge}>⚡ AI Enhanced</Text>
+            )}
+          </View>
         </Animated.View>
+      )}
+
+      {isParsing && (
+        <Text
+          style={{
+            marginTop: 8,
+            color: "#6B7280",
+            fontSize: 12,
+            fontFamily: font.regular,
+          }}
+        >
+          🤖 AI is understanding transaction...
+        </Text>
       )}
 
       {text.length === 0 && (
@@ -203,16 +296,11 @@ const styles = StyleSheet.create({
   inputContainer: {
     flexDirection: "row",
     alignItems: "center",
-
     backgroundColor: "#FFFFFF",
-
     borderRadius: 18,
-
     borderWidth: 1.5,
     borderColor: "#E5E7EB",
-
     paddingHorizontal: 16,
-
     minHeight: 58,
   },
 
@@ -227,12 +315,9 @@ const styles = StyleSheet.create({
 
   input: {
     flex: 1,
-
     fontFamily: font.medium,
     fontSize: 16,
-
     color: colors.textPrimary,
-
     paddingVertical: 14,
   },
 
@@ -243,17 +328,12 @@ const styles = StyleSheet.create({
 
   previewBox: {
     marginTop: 10,
-
     flexDirection: "row",
     alignItems: "center",
-
     backgroundColor: "#ECFDF5",
-
     borderRadius: 14,
-
     borderWidth: 1,
     borderColor: "#A7F3D0",
-
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
@@ -264,29 +344,30 @@ const styles = StyleSheet.create({
   },
 
   previewText: {
-    flex: 1,
-
     fontFamily: font.semibold,
     fontSize: 14,
-
     color: "#047857",
+  },
+
+  claudeBadge: {
+    fontFamily: font.bold,
+    fontSize: 10,
+    color: "#059669",
+    marginTop: 2,
+    letterSpacing: 0.5,
   },
 
   suggestions: {
     flexDirection: "row",
     flexWrap: "wrap",
-
     gap: 8,
-
     marginTop: 12,
   },
 
   chip: {
     backgroundColor: "#F3F4F6",
-
     paddingHorizontal: 12,
     paddingVertical: 8,
-
     borderRadius: 999,
   },
 

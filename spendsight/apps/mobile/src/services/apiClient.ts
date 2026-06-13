@@ -7,6 +7,10 @@ const apiClient = axios.create({
     headers: { 'Content-Type': 'application/json' },
 });
 
+// console.log(
+//     "API URL:",
+//     process.env.EXPO_PUBLIC_API_URL
+// );
 apiClient.interceptors.request.use(async (config) => {
     try {
         const user = auth.currentUser;
@@ -19,6 +23,33 @@ apiClient.interceptors.request.use(async (config) => {
     }
     return config;
 });
+// apiClient.interceptors.request.use(
+//     async (config) => {
+
+//         const user = auth.currentUser;
+
+//         console.log(
+//             "Current User:",
+//             user?.uid
+//         );
+
+//         if (user) {
+
+//             const token =
+//                 await user.getIdToken();
+
+//             console.log(
+//                 "Token Found:",
+//                 !!token
+//             );
+
+//             config.headers.Authorization =
+//                 `Bearer ${token}`;
+//         }
+
+//         return config;
+//     }
+// );
 
 apiClient.interceptors.response.use(
     (response) => response,

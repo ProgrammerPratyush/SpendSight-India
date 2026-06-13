@@ -21,6 +21,7 @@ const errorHandler = require('./middleware/errorHandler');
 const authMiddleware = require('./middleware/authMiddleware');
 const requestLogger = require('./middleware/requestLogger');
 const apiLimiter = require('./middleware/rateLimiter');
+const parseRoutes = require("./routes/parse");
 
 const logger = require('./utils/logger');
 
@@ -155,7 +156,7 @@ app.get('/ping', (req, res) => {
 // ──────────────────────────────────────────────────────────
 //
 app.use('/api/auth', authRoutes);
-
+app.use('/api/parse', parseRoutes);
 //
 // ──────────────────────────────────────────────────────────
 // Protected Routes
@@ -192,6 +193,12 @@ app.use(
     adminRoutes
 );
 
+// For Claude code parser
+app.use(
+    "/api/parse",
+    authMiddleware,
+    parseRoutes
+);
 //
 // ──────────────────────────────────────────────────────────
 // 404 Handler
