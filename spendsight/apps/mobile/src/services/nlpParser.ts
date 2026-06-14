@@ -5,6 +5,7 @@
 export interface ParsedTransaction {
     amount: number;
     merchant?: string;
+    description?: string;
     merchantNormalised?: string;
     categoryId?: string;
     categoryName?: string;
@@ -13,7 +14,7 @@ export interface ParsedTransaction {
     txDate: Date;
     confidence: number;
     rawInput?: string;
-    source?: "nlp_tier1" | "nlp_tier2"; // Added this
+    source?: "nlp_tier1" | "nlp_tier2";
 }
 
 // ── Indian merchant dictionary ─────────────────────────────────────────────
@@ -59,6 +60,9 @@ const MERCHANT_MAP: Record<string, { name: string; cat: string; icon: string }> 
     bus: { name: 'Bus', cat: 'Travel', icon: '🚌' },
     petrol: { name: 'Petrol', cat: 'Travel', icon: '⛽' },
     fuel: { name: 'Fuel', cat: 'Travel', icon: '⛽' },
+    diesel: { name: 'Diesel', cat: 'Travel', icon: '⛽' },
+    toll: { name: 'Toll', cat: 'Travel', icon: '🛣️' },
+    parking: { name: 'Parking', cat: 'Travel', icon: '🅿️' },
     indigo: { name: 'IndiGo', cat: 'Travel', icon: '✈️' },
     spicejet: { name: 'SpiceJet', cat: 'Travel', icon: '✈️' },
     // Shopping
@@ -135,6 +139,72 @@ const MERCHANT_MAP: Record<string, { name: string; cat: string; icon: string }> 
     fees: { name: 'Fees', cat: 'Education', icon: '🎓' },
 };
 
+// ── Product keywords for detection ────────────────────────────────────────
+const PRODUCT_KEYWORDS = [
+    "headphones",
+    "earphones",
+    "laptop",
+    "phone",
+    "mobile",
+    "shirt",
+    "shoes",
+    "watch",
+    "bag",
+    "charger",
+    "keyboard",
+    "mouse",
+    "tablet",
+    "camera",
+    "speaker",
+    "cable",
+    "adapter",
+    "backpack",
+    "wallet",
+    "glasses",
+];
+
+// ── Shopping keywords for heuristic detection ─────────────────────────────
+const SHOPPING_KEYWORDS = [
+    "buy",
+    "bought",
+    "purchase",
+    "purchased",
+    "shopping",
+    "ordered",
+    "headphones",
+    "earphones",
+    "laptop",
+    "phone",
+    "shirt",
+    "shoes",
+    "clothes",
+    "dress",
+    "jeans",
+    "jacket",
+];
+
+// ── Travel keywords for heuristic detection ───────────────────────────────
+const TRAVEL_KEYWORDS = [
+    "uber",
+    "ola",
+    "fuel",
+    "petrol",
+    "diesel",
+    "toll",
+    "parking",
+    "driving",
+    "highway",
+    "travel",
+    "cab",
+    "taxi",
+    "auto",
+    "rapido",
+    "metro",
+    "train",
+    "flight",
+    "bus",
+];
+
 // ── Date keyword map ───────────────────────────────────────────────────────
 function resolveDate(input: string): Date {
     const lower = input.toLowerCase();
@@ -187,6 +257,7 @@ export function parseNaturalLanguage(
     const result: ParsedTransaction = {
         amount: 0,
         merchant: '',
+        description: '',
         merchantNormalised: '',
         categoryId: undefined,
         categoryName: 'Other',
@@ -195,6 +266,7 @@ export function parseNaturalLanguage(
         txDate: new Date(),
         confidence: 0,
         rawInput: raw,
+        source: 'nlp_tier1',
     };
 
     // ── 1. Detect credit keywords ────────────────────────────────────────────
@@ -222,7 +294,10 @@ export function parseNaturalLanguage(
         }
     }
 
-    // ── 3. Match merchant from dictionary ───────────────────────────────────
+    // ── 3. Check for travel heuristics ───────────────────────────────────────
+    const isTravel = TRAVEL_KEYWORDS.some(k => lower.includes(k));
+
+    // ── 4. Match merchant from dictionary ───────────────────────────────────
     const words = lower.split(/\s+/);
     let bestMatch: { name: string; cat: string; icon: string } | null = null;
     let matchedKeyword = '';
@@ -240,6 +315,7 @@ export function parseNaturalLanguage(
 
     if (bestMatch) {
         result.merchantNormalised = bestMatch.name;
+        result.merchant = bestMatch.name;
         result.categoryName = bestMatch.cat;
         result.categoryIcon = bestMatch.icon;
 
@@ -249,48 +325,85 @@ export function parseNaturalLanguage(
         );
         if (matchedCat) {
             result.categoryId = matchedCat._id;
+            result.confidence += 0.2; // Boost confidence when category is matched
         }
+    } else if (isTravel) {
+        // Apply travel heuristics when no merchant matched but travel keywords detected
+        const travelCat = categories.find(
+            c => c.name.toLowerCase() === "travel"
+        );
+        if (travelCat) {
+            result.categoryId = travelCat._id;
+            result.categoryName = travelCat.name;
+            result.categoryIcon = travelCat.icon;
+            result.confidence += 0.3;
+        }
+        // Don't fabricate merchant name for travel expenses
+        result.merchant = '';
+        result.merchantNormalised = '';
     } else {
-        // No dictionary match — use remaining words as merchant name
-        const amountStr = result.amount ? String(Math.round(result.amount)) : '';
-        const dateWords = ['today', 'yesterday', 'last', 'jan', 'feb', 'mar', 'apr', 'may', 'jun',
-            'jul', 'aug', 'sep', 'oct', 'nov', 'dec', 'morning', 'evening', 'night',
-            'rs', 'rupees', 'received', 'spent', 'paid', 'for', 'on', 'at', 'from'];
+        // No dictionary match and no travel heuristic
+        // DO NOT fabricate merchant name
+        result.merchant = '';
+        result.merchantNormalised = '';
+    }
 
-        const merchantWords = words.filter(w => {
-            if (w === amountStr) return false;
-            if (dateWords.some(d => w.includes(d))) return false;
-            if (/^\d+(\.\d+)?$/.test(w)) return false;
-            return w.length > 1;
-        });
+    // ── 5. Product detection ─────────────────────────────────────────────────
+    const foundProduct = PRODUCT_KEYWORDS.find(product => lower.includes(product));
+    if (foundProduct) {
+        result.description = foundProduct.charAt(0).toUpperCase() + foundProduct.slice(1);
+        result.confidence += 0.2;
+    }
 
-        if (merchantWords.length > 0) {
-            result.merchant = merchantWords.map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-            result.merchantNormalised = result.merchant;
-            result.confidence += 0.2;
+    // ── 6. Shopping heuristics ───────────────────────────────────────────────
+    const isShopping = SHOPPING_KEYWORDS.some(keyword => lower.includes(keyword));
+
+    if (isShopping && !result.categoryId) {
+        const shoppingCat = categories.find(
+            c => c.name.toLowerCase() === "shopping"
+        );
+        if (shoppingCat) {
+            result.categoryId = shoppingCat._id;
+            result.categoryName = shoppingCat.name;
+            result.categoryIcon = shoppingCat.icon;
+            result.confidence += 0.3;
         }
     }
 
-    // ── 4. Resolve date ──────────────────────────────────────────────────────
+    // ── 7. Resolve date ──────────────────────────────────────────────────────
     result.txDate = resolveDate(raw);
     if (raw.toLowerCase() !== 'today') result.confidence += 0.1;
-
-    // ── 5. Set merchant from normalised if empty ─────────────────────────────
-    if (!result.merchant && result.merchantNormalised) {
-        result.merchant = result.merchantNormalised;
-    }
 
     return result;
 }
 
 // ── Preview label for UI feedback ─────────────────────────────────────────
 export function getParsePreview(parsed: ParsedTransaction): string {
-    if (!parsed.amount && !parsed.merchantNormalised) return '';
+    if (!parsed.amount && !parsed.merchantNormalised && !parsed.description) return '';
 
     const parts: string[] = [];
-    if (parsed.merchantNormalised) parts.push(parsed.merchantNormalised);
+
+    // Add merchant or description
+    if (parsed.merchantNormalised) {
+        parts.push(parsed.merchantNormalised);
+    } else if (parsed.description) {
+        parts.push(parsed.description);
+    }
+
+    // Add amount
     if (parsed.amount) parts.push(`₹${parsed.amount.toLocaleString('en-IN')}`);
+
+    // Add category
     if (parsed.categoryName && parsed.categoryName !== 'Other') parts.push(parsed.categoryName);
 
     return parts.join(' · ');
+}
+
+// ── Helper to check if Tier-1 result is high confidence ──────────────────
+export function isHighConfidenceParse(parsed: ParsedTransaction): boolean {
+    return (
+        !!parsed.amount &&
+        !!parsed.categoryId &&
+        parsed.confidence >= 0.7
+    );
 }
