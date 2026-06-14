@@ -11,11 +11,52 @@ Extract:
 
 - amount
 - merchant
+- description
 - category
 - type
 - daysAgo
 
 Return valid JSON only.
+
+MERCHANT RULES
+
+Merchant must be a real business,
+vendor, service provider, store,
+company or payee.
+
+Do NOT use actions,
+activities,
+verbs,
+locations,
+or descriptions as merchants.
+
+Invalid:
+
+"Bought headphones"
+"Paid yesterday"
+"While driving on OMR"
+"Monthly expense"
+"Fuel while driving"
+
+For these:
+
+merchant = ""
+
+Use description instead.
+
+Examples:
+
+Input:
+Bought headphones of 800
+
+Output:
+{
+  "amount": 800,
+  "merchant": "",
+  "description": "headphones",
+  "category": "Shopping",
+  "type": "debit"
+}
 
 Categories:
 Food & Dining

@@ -124,14 +124,19 @@ export default function NLPInput({ categories, onParsed, onClear }: Props) {
   async function runParser(value: string) {
     const result = parseNaturalLanguage(value, categories);
 
+    console.log("Tier1 Result", result);
+
     setParsed(result);
 
     const previewText = getParsePreview(result);
 
     setPreview(previewText);
 
-    // Tier 1 Success
-    if (result.confidence >= 0.4 && result.amount) {
+    // Check if Tier-1 result is high confidence
+    const isHighConfidence =
+      !!result.amount && !!result.categoryId && result.confidence >= 0.7;
+
+    if (isHighConfidence) {
       onParsed(result);
 
       Animated.timing(fadeAnim, {
@@ -143,8 +148,14 @@ export default function NLPInput({ categories, onParsed, onClear }: Props) {
       return;
     }
 
-    // Tier 2 Claude Fallback
-    if (value.trim().split(" ").length >= 3) {
+    // Tier 2 Claude Fallback - trigger when:
+    // - No categoryId matched, OR
+    // - No merchant normalized, OR
+    // - Low confidence
+    const shouldUseClaude = !result.categoryId || result.confidence < 0.7;
+
+    if (shouldUseClaude && value.trim().split(" ").length >= 3) {
+      console.log("Calling Claude...");
       await parseWithClaude(value);
     }
   }
