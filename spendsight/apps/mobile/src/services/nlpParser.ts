@@ -270,7 +270,7 @@ export function parseNaturalLanguage(
     };
 
     // ── 1. Detect credit keywords ────────────────────────────────────────────
-    const creditKeywords = ['received', 'credited', 'got', 'salary', 'income', 'cashback', 'refund', 'from'];
+    const creditKeywords = ['received', 'credited', 'salary', 'income', 'cashback', 'refund'];
     if (creditKeywords.some(k => lower.includes(k))) {
         result.type = 'credit';
     }

@@ -251,24 +251,33 @@ router.get('/:id', async (req, res, next) => {
 // update transaction code
 router.put('/:id', async (req, res, next) => {
     try {
+        const user = await User.findOne({
+            firebaseUid: req.userId,
+        });
+
+        if (!user) {
+            return res.status(404).json({
+                error: 'User not found',
+            });
+        }
+
         const tx = await Transaction.findOne({
             _id: req.params.id,
-            userId: req.user._id,
+            userId: user._id,
         });
 
         if (!tx) {
             return res.status(404).json({
-                success: false,
-                message: 'Transaction not found',
+                error: 'Transaction not found',
             });
         }
 
         Object.assign(tx, req.body);
+
         if (req.body.amount) {
-            tx.amount =
-                Math.round(
-                    req.body.amount * 100
-                );
+            tx.amount = Math.round(
+                Number(req.body.amount) * 100
+            );
         }
 
         await tx.save();
@@ -278,10 +287,7 @@ router.put('/:id', async (req, res, next) => {
             data: tx,
         });
     } catch (err) {
-        res.status(500).json({
-            success: false,
-            message: err.message,
-        });
+        next(err);
     }
 });
 
