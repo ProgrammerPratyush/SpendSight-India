@@ -113,8 +113,18 @@ export default function NLPInput({ categories, onParsed, onClear }: Props) {
       }).start();
 
       console.log("Claude Tier-2 Success");
-    } catch (err) {
-      console.log("Claude parse failed:", err);
+    } catch (err: unknown) {
+      const errorStatus =
+        typeof err === "object" && err !== null && "response" in err
+          ? (err as { response?: { status?: unknown } }).response?.status
+          : undefined;
+
+      console.log("[CLAUDE_ERROR]", errorStatus ?? err);
+
+      // Preserve Tier-1 result
+      if (parsed) {
+        onParsed(parsed);
+      }
     } finally {
       setIsParsing(false);
     }
@@ -123,6 +133,8 @@ export default function NLPInput({ categories, onParsed, onClear }: Props) {
   // Updated runParser with Tier-1 and Tier-2 fallback
   async function runParser(value: string) {
     const result = parseNaturalLanguage(value, categories);
+
+    const wordCount = value.trim().split(/\s+/).filter(Boolean).length;
 
     console.log("Tier1 Result", result);
 
@@ -152,10 +164,19 @@ export default function NLPInput({ categories, onParsed, onClear }: Props) {
     // - No categoryId matched, OR
     // - No merchant normalized, OR
     // - Low confidence
-    const shouldUseClaude = !result.categoryId || result.confidence < 0.7;
+    const shouldUseClaude =
+      (!result.categoryId || result.confidence < 0.7) &&
+      wordCount >= 3 &&
+      result.amount > 0;
 
     if (shouldUseClaude && value.trim().split(" ").length >= 3) {
-      console.log("Calling Claude...");
+      console.log(
+        `[CLAUDE_TRIGGER]
+   Input="${value}"
+   Amount=${result.amount}
+   Confidence=${result.confidence}
+   Category=${result.categoryName}`,
+      );
       await parseWithClaude(value);
     }
   }

@@ -156,7 +156,7 @@ app.get('/ping', (req, res) => {
 // ──────────────────────────────────────────────────────────
 //
 app.use('/api/auth', authRoutes);
-app.use('/api/parse', parseRoutes);
+// app.use('/api/parse', parseRoutes);
 //
 // ──────────────────────────────────────────────────────────
 // Protected Routes
