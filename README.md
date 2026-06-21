@@ -84,7 +84,8 @@ Every working Indian generates 40–80 financial transactions per month across U
 
 ## Architecture
 
-<img width="1536" height="1024" alt="Architecture diagram 2026" src="https://github.com/user-attachments/assets/8dcd348b-fa09-4fbb-a801-7c5083ce0f52" />
+<img width="1536" height="1024" alt="Architecture diagram Updated" src="https://github.com/user-attachments/assets/376c59df-4460-4cfa-8f05-e2196bf18694" />
+
 
 ## 🏗️ Architecture Philosophy
 
