@@ -35,9 +35,34 @@ const insightSchema = new mongoose.Schema({
         type: Date,
         default: null,
     },
+    title: {
+        type: String,
+        default: '',
+    },
+
+    icon: {
+        type: String,
+        default: '💡',
+    },
+
+    severity: {
+        type: String,
+        enum: [
+            'success',
+            'warning',
+            'danger',
+            'info',
+        ],
+        default: 'info',
+    },
 }, {
     timestamps: true,
     expireAfterSeconds: 60 * 60 * 24 * 90,   // auto-delete after 90 days
 });
+
+insightSchema.index(
+    { createdAt: 1 },
+    { expireAfterSeconds: 60 * 60 * 24 * 90 }
+);
 
 module.exports = mongoose.model('Insight', insightSchema);
