@@ -3,6 +3,7 @@ import {
   View,
   Text,
   ScrollView,
+  FlatList,
   TouchableOpacity,
   StyleSheet,
   RefreshControl,
@@ -19,13 +20,19 @@ import {
   shadow,
 } from "../utils/theme";
 import { formatCurrency } from "../utils/formatCurrency";
-import { getGreeting } from "../utils/dateHelpers";
 import { useAuthStore } from "../store/authStore";
 import { useTransactions } from "../hooks/useTransactions";
 import { useInsights } from "../hooks/useInsights";
 import { Period } from "../store/transactionStore";
-import apiClient from "../services/apiClient";
 
+// ✅ Fixed: Import Insight type from useInsights (single source of truth)
+// No longer importing from InsightCard to avoid circular imports
+import type { Insight } from "../hooks/useInsights";
+import InsightCard from "../components/InsightCard";
+
+// ─────────────────────────────────────────
+// Constants
+// ─────────────────────────────────────────
 const PERIOD_LABELS: Record<Period, string> = {
   today: "Total spent today",
   week: "Total spent this week",
@@ -46,8 +53,12 @@ const CAT_BG: Record<string, string> = {
   Other: "#F8F9FC",
 };
 
+// ─────────────────────────────────────────
+// Component
+// ─────────────────────────────────────────
 export default function DashboardScreen({ navigation }: any) {
   const { user } = useAuthStore();
+
   const {
     transactions,
     totals,
@@ -56,29 +67,31 @@ export default function DashboardScreen({ navigation }: any) {
     fetchTransactions,
     changePeriod,
   } = useTransactions();
-  const { insights, fetchInsights } = useInsights();
+
+  // ✅ Fixed: markRead now comes from useInsights
+  // No need to call apiClient directly in Dashboard
+  const {
+    insights,
+    isLoading: insightsLoading,
+    fetchInsights,
+    markRead,
+  } = useInsights();
+
   const [refreshing, setRefreshing] = useState(false);
 
-  // Run insight code
-  const runInsights = async () => {
+  // ─────────────────────────────────────
+  // Generate insights (debug button)
+  // ─────────────────────────────────────
+  // ✅ Change: Renamed from runInsights to refreshInsights
+  // No longer calls /api/admin/run-insights
+  // Simply re-fetches the latest insights from the DB
+  const refreshInsights = async () => {
     try {
-      const response = await apiClient.post("/api/admin/run-insights");
-
-      const result = response.data;
-
-      Alert.alert(
-        "Insight Engine",
-        `Created ${result.insightsCreated} insights`,
-      );
-
       await fetchInsights();
-    } catch (err: any) {
-      console.log("Insight generation failed", err);
 
-      Alert.alert(
-        "Error",
-        err?.response?.data?.error || "Failed to generate insights",
-      );
+      Alert.alert("Insights Updated", "Latest spending analysis loaded.");
+    } catch (err) {
+      Alert.alert("Error", "Unable to refresh insights.");
     }
   };
 
@@ -93,19 +106,27 @@ export default function DashboardScreen({ navigation }: any) {
     setRefreshing(false);
   }, [fetchTransactions, fetchInsights]);
 
-  // Build category totals from transactions
+  // ─────────────────────────────────────
+  // Category totals
+  // ─────────────────────────────────────
   const categoryTotals = transactions
     .filter((tx) => tx.type === "debit" && tx.status !== "failed")
     .reduce(
       (
         acc: Record<
           string,
-          { name: string; icon: string; total: number; bg: string }
+          {
+            name: string;
+            icon: string;
+            total: number;
+            bg: string;
+          }
         >,
         tx,
       ) => {
         const cat = tx.categoryId;
         if (!cat) return acc;
+
         if (!acc[cat._id]) {
           acc[cat._id] = {
             name: cat.name,
@@ -114,6 +135,7 @@ export default function DashboardScreen({ navigation }: any) {
             bg: CAT_BG[cat.name] || "#F3F4F6",
           };
         }
+
         acc[cat._id].total += tx.amount;
         return acc;
       },
@@ -124,8 +146,23 @@ export default function DashboardScreen({ navigation }: any) {
     .sort((a, b) => b.total - a.total)
     .slice(0, 4);
 
-  const topInsight = insights[0];
+  // ─────────────────────────────────────
+  // Insight press → mark as read
+  // ✅ Fixed: Uses markRead from useInsights
+  // which does optimistic local update
+  // No extra fetchInsights() call needed
+  // ─────────────────────────────────────
+  const handleInsightPress = useCallback(
+    async (insight: Insight) => {
+      if (!insight._id || insight.readAt) return;
+      await markRead(insight._id);
+    },
+    [markRead],
+  );
 
+  // ─────────────────────────────────────
+  // Render
+  // ─────────────────────────────────────
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView
@@ -138,7 +175,7 @@ export default function DashboardScreen({ navigation }: any) {
           />
         }
       >
-        {/* Header */}
+        {/* ── Header ── */}
         <View style={styles.header}>
           <View>
             <Text style={styles.greeting}>Welcome back,</Text>
@@ -149,7 +186,7 @@ export default function DashboardScreen({ navigation }: any) {
           </TouchableOpacity>
         </View>
 
-        {/* Period tabs */}
+        {/* ── Period tabs ── */}
         <View style={styles.tabsRow}>
           {(["today", "week", "month"] as Period[]).map((p) => (
             <TouchableOpacity
@@ -166,7 +203,7 @@ export default function DashboardScreen({ navigation }: any) {
           ))}
         </View>
 
-        {/* Main spend card */}
+        {/* ── Main spend card ── */}
         <View style={[styles.spendCard, shadow.strong]}>
           {isLoading ? (
             <ActivityIndicator
@@ -191,26 +228,49 @@ export default function DashboardScreen({ navigation }: any) {
           )}
         </View>
 
-        {/* Insight card */}
-        <View style={[styles.insightCard, shadow.card]}>
-          <View style={styles.insightIconWrap}>
-            <Text style={{ fontSize: 22 }}>💡</Text>
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.insightTitle}>Smart Insight</Text>
-            <Text style={styles.insightText}>
-              {topInsight
-                ? topInsight.text
-                : "Add your first transaction to see insights here."}
+        {/* ── Change #7: Section header with count ── */}
+        <View style={styles.sectionRow}>
+          <Text style={styles.sectionTitle}>
+            Smart Insights{" "}
+            {insights.length > 0 && (
+              <Text style={styles.insightCount}>({insights.length})</Text>
+            )}
+          </Text>
+        </View>
+
+        {/* ── Change #4: Horizontal FlatList ── */}
+        {insightsLoading ? (
+          <ActivityIndicator
+            color={colors.primary}
+            style={{ marginBottom: spacing.md }}
+          />
+        ) : insights.length > 0 ? (
+          <FlatList
+            horizontal
+            data={insights}
+            showsHorizontalScrollIndicator={false}
+            keyExtractor={(item) => item._id ?? item.type}
+            contentContainerStyle={styles.insightListContent}
+            renderItem={({ item }) => (
+              <InsightCard insight={item} onPress={handleInsightPress} />
+            )}
+          />
+        ) : (
+          // Fallback: no insights yet
+          <View style={[styles.insightEmpty, shadow.card]}>
+            <Text style={{ fontSize: 26 }}>💡</Text>
+            <Text style={styles.insightEmptyText}>
+              Add your first transaction to see insights here.
             </Text>
           </View>
-        </View>
-        {/* Adding the run insights button */}
-        <TouchableOpacity onPress={runInsights} style={styles.debugButton}>
-          <Text style={styles.debugButtonText}>Generate Insights</Text>
+        )}
+
+        {/* ── Debug button ── */}
+        <TouchableOpacity onPress={refreshInsights} style={styles.debugButton}>
+          <Text style={styles.debugButtonText}>Refresh Insights</Text>
         </TouchableOpacity>
 
-        {/* Category breakdown */}
+        {/* ── Category breakdown ── */}
         <View style={styles.sectionRow}>
           <Text style={styles.sectionTitle}>Category Breakdown</Text>
           <TouchableOpacity onPress={() => navigation.navigate("Transactions")}>
@@ -224,9 +284,20 @@ export default function DashboardScreen({ navigation }: any) {
               <View key={`${cat.name}-${i}`}>
                 <View style={styles.catRow}>
                   <View
-                    style={[styles.catIconWrap, { backgroundColor: cat.bg }]}
+                    style={[
+                      styles.catIconWrap,
+                      {
+                        backgroundColor: cat.bg,
+                      },
+                    ]}
                   >
-                    <Text style={{ fontSize: 22 }}>{cat.icon}</Text>
+                    <Text
+                      style={{
+                        fontSize: 22,
+                      }}
+                    >
+                      {cat.icon}
+                    </Text>
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.catName}>{cat.name}</Text>
@@ -235,6 +306,7 @@ export default function DashboardScreen({ navigation }: any) {
                     {formatCurrency(cat.total)}
                   </Text>
                 </View>
+
                 <View style={styles.progressBg}>
                   <View
                     style={[
@@ -248,6 +320,7 @@ export default function DashboardScreen({ navigation }: any) {
                     ]}
                   />
                 </View>
+
                 {i < topCategories.length - 1 && (
                   <View style={styles.divider} />
                 )}
@@ -266,7 +339,7 @@ export default function DashboardScreen({ navigation }: any) {
           )
         )}
 
-        {/* Recent activity */}
+        {/* ── Recent activity ── */}
         <View style={styles.sectionRow}>
           <Text style={styles.sectionTitle}>Recent Activity</Text>
           <TouchableOpacity onPress={() => navigation.navigate("Transactions")}>
@@ -294,10 +367,15 @@ export default function DashboardScreen({ navigation }: any) {
                       },
                     ]}
                   >
-                    <Text style={{ fontSize: 22 }}>
+                    <Text
+                      style={{
+                        fontSize: 22,
+                      }}
+                    >
                       {tx.categoryId?.icon || "💰"}
                     </Text>
                   </View>
+
                   <View style={styles.txInfo}>
                     <Text style={styles.txMerchant} numberOfLines={1}>
                       {tx.merchantNormalised || tx.merchantRaw || "Transaction"}
@@ -306,6 +384,7 @@ export default function DashboardScreen({ navigation }: any) {
                       {tx.categoryId?.name || "Uncategorised"}
                     </Text>
                   </View>
+
                   <View style={styles.txRight}>
                     <Text
                       style={[
@@ -348,6 +427,7 @@ export default function DashboardScreen({ navigation }: any) {
                     </View>
                   </View>
                 </View>
+
                 {i < Math.min(transactions.length, 5) - 1 && (
                   <View style={styles.divider} />
                 )}
@@ -359,7 +439,7 @@ export default function DashboardScreen({ navigation }: any) {
         <View style={{ height: 120 }} />
       </ScrollView>
 
-      {/* FAB */}
+      {/* ── FAB ── */}
       <TouchableOpacity
         style={[styles.fab, shadow.fab]}
         onPress={() => navigation.navigate("AddTransaction")}
@@ -370,8 +450,14 @@ export default function DashboardScreen({ navigation }: any) {
   );
 }
 
+// ─────────────────────────────────────────
+// Styles
+// ─────────────────────────────────────────
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
+  container: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
 
   // Header
   header: {
@@ -466,34 +552,34 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
   },
 
-  // Insight
-  insightCard: {
+  // Change #7: insight count style
+  insightCount: {
+    fontFamily: font.regular,
+    fontSize: fontSize.lg,
+    color: colors.textMuted,
+  },
+
+  // Change #4: FlatList padding
+  insightListContent: {
+    paddingHorizontal: spacing.screenPadding,
+    paddingBottom: spacing.md,
+  },
+
+  // Insight empty fallback
+  insightEmpty: {
     flexDirection: "row",
-    alignItems: "flex-start",
+    alignItems: "center",
+    gap: spacing.sm,
     marginHorizontal: spacing.screenPadding,
     marginBottom: spacing.md,
     backgroundColor: colors.cardBackground,
     borderRadius: radius.lg,
     padding: spacing.md,
-    gap: spacing.sm,
     borderLeftWidth: 4,
-    borderLeftColor: colors.accent,
+    borderLeftColor: "#3B82F6",
   },
-  insightIconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: radius.sm,
-    backgroundColor: colors.accentLight,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  insightTitle: {
-    fontFamily: font.bold,
-    fontSize: fontSize.md,
-    color: colors.accent,
-    marginBottom: 2,
-  },
-  insightText: {
+  insightEmptyText: {
+    flex: 1,
     fontFamily: font.regular,
     fontSize: fontSize.sm,
     color: colors.textSecondary,
@@ -605,7 +691,10 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     marginTop: 2,
   },
-  txRight: { alignItems: "flex-end", gap: 4 },
+  txRight: {
+    alignItems: "flex-end",
+    gap: 4,
+  },
   txAmount: {
     fontFamily: font.bold,
     fontSize: fontSize.lg,
@@ -663,6 +752,8 @@ const styles = StyleSheet.create({
     lineHeight: 36,
     textAlign: "center",
   },
+
+  // Debug
   debugButton: {
     backgroundColor: "#0A1172",
     marginHorizontal: spacing.screenPadding,
@@ -670,7 +761,6 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: radius.md,
   },
-
   debugButtonText: {
     color: "#FFFFFF",
     textAlign: "center",
