@@ -16,6 +16,8 @@ import AddTransactionScreen from "../screens/AddTransactionScreen";
 import CategoryDetailScreen from "../screens/CategoryDetailScreen";
 import EditTransactionScreen from "../screens/EditTransactionScreen";
 import TransactionDetailScreen from "../screens/TransactionDetailScreen";
+// import NotificationsScreen from "../screens/NotificationsScreen"; // Uncomment this line if you want to include the NotificationsScreen in your navigation
+import NotificationsScreen from "../screens/NotificationsScreen";
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
@@ -120,6 +122,10 @@ function AppStack() {
         name="TransactionDetail"
         component={TransactionDetailScreen}
       />
+
+      {/* ✅ Step 3: Register NotificationsScreen */}
+      {/* name="Notifications" matches navigation.navigate("Notifications") in Dashboard */}
+      <Stack.Screen name="Notifications" component={NotificationsScreen} />
     </Stack.Navigator>
   );
 }
