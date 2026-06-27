@@ -3,6 +3,7 @@ import {
   View,
   Text,
   ScrollView,
+  FlatList,
   TouchableOpacity,
   StyleSheet,
   RefreshControl,
@@ -23,7 +24,11 @@ import { useAuthStore } from "../store/authStore";
 import { useTransactions } from "../hooks/useTransactions";
 import { useInsights } from "../hooks/useInsights";
 import { Period } from "../store/transactionStore";
-import apiClient from "../services/apiClient";
+
+// ✅ Fixed: Import Insight type from useInsights (single source of truth)
+// No longer importing from InsightCard to avoid circular imports
+import type { Insight } from "../hooks/useInsights";
+import InsightCard from "../components/InsightCard";
 
 // ─────────────────────────────────────────
 // Constants
@@ -63,58 +68,30 @@ export default function DashboardScreen({ navigation }: any) {
     changePeriod,
   } = useTransactions();
 
-  const { insights, fetchInsights } = useInsights();
+  // ✅ Fixed: markRead now comes from useInsights
+  // No need to call apiClient directly in Dashboard
+  const {
+    insights,
+    isLoading: insightsLoading,
+    fetchInsights,
+    markRead,
+  } = useInsights();
 
   const [refreshing, setRefreshing] = useState(false);
 
-  // ✅ Step 8: Unread notification count state
-  const [unreadCount, setUnreadCount] = useState(0);
-
   // ─────────────────────────────────────
-  // ✅ Step 8: Fetch unread notification count
-  // Calls GET /api/notifications/unread-count
-  // Returns { data: { count: number } }
+  // Generate insights (debug button)
   // ─────────────────────────────────────
-  const fetchUnreadCount = useCallback(async () => {
+  // ✅ Change: Renamed from runInsights to refreshInsights
+  // No longer calls /api/admin/run-insights
+  // Simply re-fetches the latest insights from the DB
+  const refreshInsights = async () => {
     try {
-      const res = await apiClient.get("/api/notifications/unread-count");
-
-      // ✅ Safe fallback if shape is unexpected
-      const count = res.data?.data?.count ?? 0;
-      setUnreadCount(count);
-    } catch (err) {
-      // ✅ Silent fail — badge just shows 0
-      // Do not Alert here, it would be annoying
-      console.log("[NOTIF] Failed to fetch unread count:", err);
-      setUnreadCount(0);
-    }
-  }, []);
-
-  // ─────────────────────────────────────
-  // Run insight generation (debug button)
-  // ─────────────────────────────────────
-  const runInsights = async () => {
-    try {
-      const response = await apiClient.post("/api/admin/run-insights");
-
-      const result = response.data;
-
-      Alert.alert(
-        "Insight Engine",
-        `Created ${result.insightsCreated} insights`,
-      );
-
       await fetchInsights();
 
-      // ✅ Step 8: Refresh badge after new insights
-      // create new notifications
-      await fetchUnreadCount();
-    } catch (err: any) {
-      console.log("Insight generation failed", err);
-      Alert.alert(
-        "Error",
-        err?.response?.data?.error || "Failed to generate insights",
-      );
+      Alert.alert("Insights Updated", "Latest spending analysis loaded.");
+    } catch (err) {
+      Alert.alert("Error", "Unable to refresh insights.");
     }
   };
 
@@ -145,7 +122,7 @@ export default function DashboardScreen({ navigation }: any) {
   }, [fetchTransactions, fetchInsights, fetchUnreadCount]);
 
   // ─────────────────────────────────────
-  // Category totals derived from transactions
+  // Category totals
   // ─────────────────────────────────────
   const categoryTotals = transactions
     .filter((tx) => tx.type === "debit" && tx.status !== "failed")
@@ -153,7 +130,12 @@ export default function DashboardScreen({ navigation }: any) {
       (
         acc: Record<
           string,
-          { name: string; icon: string; total: number; bg: string }
+          {
+            name: string;
+            icon: string;
+            total: number;
+            bg: string;
+          }
         >,
         tx,
       ) => {
@@ -179,7 +161,19 @@ export default function DashboardScreen({ navigation }: any) {
     .sort((a, b) => b.total - a.total)
     .slice(0, 4);
 
-  const topInsight = insights[0];
+  // ─────────────────────────────────────
+  // Insight press → mark as read
+  // ✅ Fixed: Uses markRead from useInsights
+  // which does optimistic local update
+  // No extra fetchInsights() call needed
+  // ─────────────────────────────────────
+  const handleInsightPress = useCallback(
+    async (insight: Insight) => {
+      if (!insight._id || insight.readAt) return;
+      await markRead(insight._id);
+    },
+    [markRead],
+  );
 
   // ─────────────────────────────────────
   // Render
@@ -265,24 +259,46 @@ export default function DashboardScreen({ navigation }: any) {
           )}
         </View>
 
-        {/* ── Insight card ── */}
-        <View style={[styles.insightCard, shadow.card]}>
-          <View style={styles.insightIconWrap}>
-            <Text style={{ fontSize: 22 }}>💡</Text>
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.insightTitle}>Smart Insight</Text>
-            <Text style={styles.insightText}>
-              {topInsight
-                ? topInsight.text
-                : "Add your first transaction to see insights here."}
-            </Text>
-          </View>
+        {/* ── Change #7: Section header with count ── */}
+        <View style={styles.sectionRow}>
+          <Text style={styles.sectionTitle}>
+            Smart Insights{" "}
+            {insights.length > 0 && (
+              <Text style={styles.insightCount}>({insights.length})</Text>
+            )}
+          </Text>
         </View>
 
+        {/* ── Change #4: Horizontal FlatList ── */}
+        {insightsLoading ? (
+          <ActivityIndicator
+            color={colors.primary}
+            style={{ marginBottom: spacing.md }}
+          />
+        ) : insights.length > 0 ? (
+          <FlatList
+            horizontal
+            data={insights}
+            showsHorizontalScrollIndicator={false}
+            keyExtractor={(item) => item._id ?? item.type}
+            contentContainerStyle={styles.insightListContent}
+            renderItem={({ item }) => (
+              <InsightCard insight={item} onPress={handleInsightPress} />
+            )}
+          />
+        ) : (
+          // Fallback: no insights yet
+          <View style={[styles.insightEmpty, shadow.card]}>
+            <Text style={{ fontSize: 26 }}>💡</Text>
+            <Text style={styles.insightEmptyText}>
+              Add your first transaction to see insights here.
+            </Text>
+          </View>
+        )}
+
         {/* ── Debug button ── */}
-        <TouchableOpacity onPress={runInsights} style={styles.debugButton}>
-          <Text style={styles.debugButtonText}>Generate Insights</Text>
+        <TouchableOpacity onPress={refreshInsights} style={styles.debugButton}>
+          <Text style={styles.debugButtonText}>Refresh Insights</Text>
         </TouchableOpacity>
 
         {/* ── Category breakdown ── */}
@@ -299,9 +315,20 @@ export default function DashboardScreen({ navigation }: any) {
               <View key={`${cat.name}-${i}`}>
                 <View style={styles.catRow}>
                   <View
-                    style={[styles.catIconWrap, { backgroundColor: cat.bg }]}
+                    style={[
+                      styles.catIconWrap,
+                      {
+                        backgroundColor: cat.bg,
+                      },
+                    ]}
                   >
-                    <Text style={{ fontSize: 22 }}>{cat.icon}</Text>
+                    <Text
+                      style={{
+                        fontSize: 22,
+                      }}
+                    >
+                      {cat.icon}
+                    </Text>
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.catName}>{cat.name}</Text>
@@ -371,7 +398,11 @@ export default function DashboardScreen({ navigation }: any) {
                       },
                     ]}
                   >
-                    <Text style={{ fontSize: 22 }}>
+                    <Text
+                      style={{
+                        fontSize: 22,
+                      }}
+                    >
                       {tx.categoryId?.icon || "💰"}
                     </Text>
                   </View>
@@ -580,34 +611,34 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
   },
 
-  // Insight card
-  insightCard: {
+  // Change #7: insight count style
+  insightCount: {
+    fontFamily: font.regular,
+    fontSize: fontSize.lg,
+    color: colors.textMuted,
+  },
+
+  // Change #4: FlatList padding
+  insightListContent: {
+    paddingHorizontal: spacing.screenPadding,
+    paddingBottom: spacing.md,
+  },
+
+  // Insight empty fallback
+  insightEmpty: {
     flexDirection: "row",
-    alignItems: "flex-start",
+    alignItems: "center",
+    gap: spacing.sm,
     marginHorizontal: spacing.screenPadding,
     marginBottom: spacing.md,
     backgroundColor: colors.cardBackground,
     borderRadius: radius.lg,
     padding: spacing.md,
-    gap: spacing.sm,
     borderLeftWidth: 4,
-    borderLeftColor: colors.accent,
+    borderLeftColor: "#3B82F6",
   },
-  insightIconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: radius.sm,
-    backgroundColor: colors.accentLight,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  insightTitle: {
-    fontFamily: font.bold,
-    fontSize: fontSize.md,
-    color: colors.accent,
-    marginBottom: 2,
-  },
-  insightText: {
+  insightEmptyText: {
+    flex: 1,
     fontFamily: font.regular,
     fontSize: fontSize.sm,
     color: colors.textSecondary,
@@ -719,7 +750,10 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     marginTop: 2,
   },
-  txRight: { alignItems: "flex-end", gap: 4 },
+  txRight: {
+    alignItems: "flex-end",
+    gap: 4,
+  },
   txAmount: {
     fontFamily: font.bold,
     fontSize: fontSize.lg,
@@ -778,7 +812,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
 
-  // Debug button
+  // Debug
   debugButton: {
     backgroundColor: "#0A1172",
     marginHorizontal: spacing.screenPadding,
