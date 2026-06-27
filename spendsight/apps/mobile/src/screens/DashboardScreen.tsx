@@ -95,16 +95,31 @@ export default function DashboardScreen({ navigation }: any) {
     }
   };
 
+  // ─────────────────────────────────────
+  // On mount: load everything
+  // ─────────────────────────────────────
   useEffect(() => {
     fetchTransactions();
     fetchInsights();
+
+    // ✅ Step 8: Load unread count on mount
+    fetchUnreadCount();
   }, []);
 
+  // ─────────────────────────────────────
+  // Pull to refresh: reload everything
+  // ─────────────────────────────────────
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await Promise.all([fetchTransactions(), fetchInsights()]);
+    await Promise.all([
+      fetchTransactions(),
+      fetchInsights(),
+
+      // ✅ Step 8: Also refresh badge on pull-to-refresh
+      fetchUnreadCount(),
+    ]);
     setRefreshing(false);
-  }, [fetchTransactions, fetchInsights]);
+  }, [fetchTransactions, fetchInsights, fetchUnreadCount]);
 
   // ─────────────────────────────────────
   // Category totals
@@ -181,8 +196,24 @@ export default function DashboardScreen({ navigation }: any) {
             <Text style={styles.greeting}>Welcome back,</Text>
             <Text style={styles.userName}>Hi, {user?.name || "there"} 👋</Text>
           </View>
-          <TouchableOpacity style={styles.notifBtn}>
+
+          {/* ✅ Step 8: Notification bell with unread badge */}
+          {/* Tapping navigates to Notifications screen     */}
+          <TouchableOpacity
+            style={styles.notifBtn}
+            onPress={() => navigation.navigate("Notifications")}
+          >
             <Text style={styles.notifIcon}>🔔</Text>
+
+            {/* ✅ Badge: only shown when unreadCount > 0 */}
+            {unreadCount > 0 && (
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>
+                  {/* ✅ Cap display at 99+ to avoid overflow */}
+                  {unreadCount > 99 ? "99+" : unreadCount}
+                </Text>
+              </View>
+            )}
           </TouchableOpacity>
         </View>
 
@@ -479,6 +510,9 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     marginTop: 2,
   },
+
+  // ✅ Step 8: Bell button — position relative
+  // so badge can be absolutely positioned on top
   notifBtn: {
     width: 44,
     height: 44,
@@ -488,8 +522,33 @@ const styles = StyleSheet.create({
     alignItems: "center",
     borderWidth: 1,
     borderColor: colors.border,
+    position: "relative",
   },
   notifIcon: { fontSize: 20 },
+
+  // ✅ Step 8: Red badge — top-right corner of bell
+  badge: {
+    position: "absolute",
+    top: -4,
+    right: -4,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: "#EF4444",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 4,
+
+    // White border so badge floats above the button clearly
+    borderWidth: 1.5,
+    borderColor: colors.cardBackground,
+  },
+  badgeText: {
+    color: "#FFFFFF",
+    fontSize: 10,
+    fontFamily: font.bold,
+    lineHeight: 13,
+  },
 
   // Period tabs
   tabsRow: {

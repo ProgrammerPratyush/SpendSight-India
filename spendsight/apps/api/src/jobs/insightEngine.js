@@ -220,17 +220,29 @@ async function generateInsightsForUser(userId) {
                         isExceeded
                             ? `You have exceeded your monthly budget by ${formatRupees(monthSpend - limit)}.`
                             : `You have used ${Math.round(percentUsed)}% of your monthly budget.`,
-
                     data: {
                         budgetId: budget._id.toString(),
                         spent: monthSpend,
                         limit,
                         percentUsed,
                     },
-
                     period: {
                         start: startOfMonth,
                         end: now,
+                    },
+                });
+
+                // ✅ Notification: Budget Alert
+                await notificationService.createNotification({
+                    userId,
+                    title: 'Budget Alert',
+                    body: insight.text,
+                    type: 'limit_alert',
+                    severity: percentUsed >= 100 ? 'critical' : 'warning',
+                    deepLink: '/budgets',
+                    metadata: {
+                        insightId: insight._id,
+                        percentUsed,
                     },
                 });
 
