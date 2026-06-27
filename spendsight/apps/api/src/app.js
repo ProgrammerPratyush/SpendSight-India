@@ -15,6 +15,8 @@ const transactionRoutes = require('./routes/transactions');
 const insightRoutes = require('./routes/insights');
 const budgetRoutes = require('./routes/budgets');
 const categoryRoutes = require('./routes/categories');
+// Import the notification routes
+const notificationRoutes = require('./routes/notifications');
 
 // Middleware imports
 const errorHandler = require('./middleware/errorHandler');
@@ -198,6 +200,12 @@ app.use(
     "/api/parse",
     authMiddleware,
     parseRoutes
+);
+// Notification Routes
+app.use(
+    "/api/notifications",
+    authMiddleware,
+    notificationRoutes
 );
 //
 // ──────────────────────────────────────────────────────────

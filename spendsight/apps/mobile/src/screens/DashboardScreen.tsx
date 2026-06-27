@@ -19,13 +19,15 @@ import {
   shadow,
 } from "../utils/theme";
 import { formatCurrency } from "../utils/formatCurrency";
-import { getGreeting } from "../utils/dateHelpers";
 import { useAuthStore } from "../store/authStore";
 import { useTransactions } from "../hooks/useTransactions";
 import { useInsights } from "../hooks/useInsights";
 import { Period } from "../store/transactionStore";
 import apiClient from "../services/apiClient";
 
+// ─────────────────────────────────────────
+// Constants
+// ─────────────────────────────────────────
 const PERIOD_LABELS: Record<Period, string> = {
   today: "Total spent today",
   week: "Total spent this week",
@@ -46,8 +48,12 @@ const CAT_BG: Record<string, string> = {
   Other: "#F8F9FC",
 };
 
+// ─────────────────────────────────────────
+// Component
+// ─────────────────────────────────────────
 export default function DashboardScreen({ navigation }: any) {
   const { user } = useAuthStore();
+
   const {
     transactions,
     totals,
@@ -56,10 +62,37 @@ export default function DashboardScreen({ navigation }: any) {
     fetchTransactions,
     changePeriod,
   } = useTransactions();
+
   const { insights, fetchInsights } = useInsights();
+
   const [refreshing, setRefreshing] = useState(false);
 
-  // Run insight code
+  // ✅ Step 8: Unread notification count state
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  // ─────────────────────────────────────
+  // ✅ Step 8: Fetch unread notification count
+  // Calls GET /api/notifications/unread-count
+  // Returns { data: { count: number } }
+  // ─────────────────────────────────────
+  const fetchUnreadCount = useCallback(async () => {
+    try {
+      const res = await apiClient.get("/api/notifications/unread-count");
+
+      // ✅ Safe fallback if shape is unexpected
+      const count = res.data?.data?.count ?? 0;
+      setUnreadCount(count);
+    } catch (err) {
+      // ✅ Silent fail — badge just shows 0
+      // Do not Alert here, it would be annoying
+      console.log("[NOTIF] Failed to fetch unread count:", err);
+      setUnreadCount(0);
+    }
+  }, []);
+
+  // ─────────────────────────────────────
+  // Run insight generation (debug button)
+  // ─────────────────────────────────────
   const runInsights = async () => {
     try {
       const response = await apiClient.post("/api/admin/run-insights");
@@ -72,9 +105,12 @@ export default function DashboardScreen({ navigation }: any) {
       );
 
       await fetchInsights();
+
+      // ✅ Step 8: Refresh badge after new insights
+      // create new notifications
+      await fetchUnreadCount();
     } catch (err: any) {
       console.log("Insight generation failed", err);
-
       Alert.alert(
         "Error",
         err?.response?.data?.error || "Failed to generate insights",
@@ -82,18 +118,35 @@ export default function DashboardScreen({ navigation }: any) {
     }
   };
 
+  // ─────────────────────────────────────
+  // On mount: load everything
+  // ─────────────────────────────────────
   useEffect(() => {
     fetchTransactions();
     fetchInsights();
+
+    // ✅ Step 8: Load unread count on mount
+    fetchUnreadCount();
   }, []);
 
+  // ─────────────────────────────────────
+  // Pull to refresh: reload everything
+  // ─────────────────────────────────────
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await Promise.all([fetchTransactions(), fetchInsights()]);
-    setRefreshing(false);
-  }, [fetchTransactions, fetchInsights]);
+    await Promise.all([
+      fetchTransactions(),
+      fetchInsights(),
 
-  // Build category totals from transactions
+      // ✅ Step 8: Also refresh badge on pull-to-refresh
+      fetchUnreadCount(),
+    ]);
+    setRefreshing(false);
+  }, [fetchTransactions, fetchInsights, fetchUnreadCount]);
+
+  // ─────────────────────────────────────
+  // Category totals derived from transactions
+  // ─────────────────────────────────────
   const categoryTotals = transactions
     .filter((tx) => tx.type === "debit" && tx.status !== "failed")
     .reduce(
@@ -106,6 +159,7 @@ export default function DashboardScreen({ navigation }: any) {
       ) => {
         const cat = tx.categoryId;
         if (!cat) return acc;
+
         if (!acc[cat._id]) {
           acc[cat._id] = {
             name: cat.name,
@@ -114,6 +168,7 @@ export default function DashboardScreen({ navigation }: any) {
             bg: CAT_BG[cat.name] || "#F3F4F6",
           };
         }
+
         acc[cat._id].total += tx.amount;
         return acc;
       },
@@ -126,6 +181,9 @@ export default function DashboardScreen({ navigation }: any) {
 
   const topInsight = insights[0];
 
+  // ─────────────────────────────────────
+  // Render
+  // ─────────────────────────────────────
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView
@@ -138,18 +196,34 @@ export default function DashboardScreen({ navigation }: any) {
           />
         }
       >
-        {/* Header */}
+        {/* ── Header ── */}
         <View style={styles.header}>
           <View>
             <Text style={styles.greeting}>Welcome back,</Text>
             <Text style={styles.userName}>Hi, {user?.name || "there"} 👋</Text>
           </View>
-          <TouchableOpacity style={styles.notifBtn}>
+
+          {/* ✅ Step 8: Notification bell with unread badge */}
+          {/* Tapping navigates to Notifications screen     */}
+          <TouchableOpacity
+            style={styles.notifBtn}
+            onPress={() => navigation.navigate("Notifications")}
+          >
             <Text style={styles.notifIcon}>🔔</Text>
+
+            {/* ✅ Badge: only shown when unreadCount > 0 */}
+            {unreadCount > 0 && (
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>
+                  {/* ✅ Cap display at 99+ to avoid overflow */}
+                  {unreadCount > 99 ? "99+" : unreadCount}
+                </Text>
+              </View>
+            )}
           </TouchableOpacity>
         </View>
 
-        {/* Period tabs */}
+        {/* ── Period tabs ── */}
         <View style={styles.tabsRow}>
           {(["today", "week", "month"] as Period[]).map((p) => (
             <TouchableOpacity
@@ -166,7 +240,7 @@ export default function DashboardScreen({ navigation }: any) {
           ))}
         </View>
 
-        {/* Main spend card */}
+        {/* ── Main spend card ── */}
         <View style={[styles.spendCard, shadow.strong]}>
           {isLoading ? (
             <ActivityIndicator
@@ -191,7 +265,7 @@ export default function DashboardScreen({ navigation }: any) {
           )}
         </View>
 
-        {/* Insight card */}
+        {/* ── Insight card ── */}
         <View style={[styles.insightCard, shadow.card]}>
           <View style={styles.insightIconWrap}>
             <Text style={{ fontSize: 22 }}>💡</Text>
@@ -205,12 +279,13 @@ export default function DashboardScreen({ navigation }: any) {
             </Text>
           </View>
         </View>
-        {/* Adding the run insights button */}
+
+        {/* ── Debug button ── */}
         <TouchableOpacity onPress={runInsights} style={styles.debugButton}>
           <Text style={styles.debugButtonText}>Generate Insights</Text>
         </TouchableOpacity>
 
-        {/* Category breakdown */}
+        {/* ── Category breakdown ── */}
         <View style={styles.sectionRow}>
           <Text style={styles.sectionTitle}>Category Breakdown</Text>
           <TouchableOpacity onPress={() => navigation.navigate("Transactions")}>
@@ -235,6 +310,7 @@ export default function DashboardScreen({ navigation }: any) {
                     {formatCurrency(cat.total)}
                   </Text>
                 </View>
+
                 <View style={styles.progressBg}>
                   <View
                     style={[
@@ -248,6 +324,7 @@ export default function DashboardScreen({ navigation }: any) {
                     ]}
                   />
                 </View>
+
                 {i < topCategories.length - 1 && (
                   <View style={styles.divider} />
                 )}
@@ -266,7 +343,7 @@ export default function DashboardScreen({ navigation }: any) {
           )
         )}
 
-        {/* Recent activity */}
+        {/* ── Recent activity ── */}
         <View style={styles.sectionRow}>
           <Text style={styles.sectionTitle}>Recent Activity</Text>
           <TouchableOpacity onPress={() => navigation.navigate("Transactions")}>
@@ -298,6 +375,7 @@ export default function DashboardScreen({ navigation }: any) {
                       {tx.categoryId?.icon || "💰"}
                     </Text>
                   </View>
+
                   <View style={styles.txInfo}>
                     <Text style={styles.txMerchant} numberOfLines={1}>
                       {tx.merchantNormalised || tx.merchantRaw || "Transaction"}
@@ -306,6 +384,7 @@ export default function DashboardScreen({ navigation }: any) {
                       {tx.categoryId?.name || "Uncategorised"}
                     </Text>
                   </View>
+
                   <View style={styles.txRight}>
                     <Text
                       style={[
@@ -348,6 +427,7 @@ export default function DashboardScreen({ navigation }: any) {
                     </View>
                   </View>
                 </View>
+
                 {i < Math.min(transactions.length, 5) - 1 && (
                   <View style={styles.divider} />
                 )}
@@ -359,7 +439,7 @@ export default function DashboardScreen({ navigation }: any) {
         <View style={{ height: 120 }} />
       </ScrollView>
 
-      {/* FAB */}
+      {/* ── FAB ── */}
       <TouchableOpacity
         style={[styles.fab, shadow.fab]}
         onPress={() => navigation.navigate("AddTransaction")}
@@ -370,8 +450,14 @@ export default function DashboardScreen({ navigation }: any) {
   );
 }
 
+// ─────────────────────────────────────────
+// Styles
+// ─────────────────────────────────────────
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
+  container: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
 
   // Header
   header: {
@@ -393,6 +479,9 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     marginTop: 2,
   },
+
+  // ✅ Step 8: Bell button — position relative
+  // so badge can be absolutely positioned on top
   notifBtn: {
     width: 44,
     height: 44,
@@ -402,8 +491,33 @@ const styles = StyleSheet.create({
     alignItems: "center",
     borderWidth: 1,
     borderColor: colors.border,
+    position: "relative",
   },
   notifIcon: { fontSize: 20 },
+
+  // ✅ Step 8: Red badge — top-right corner of bell
+  badge: {
+    position: "absolute",
+    top: -4,
+    right: -4,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: "#EF4444",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 4,
+
+    // White border so badge floats above the button clearly
+    borderWidth: 1.5,
+    borderColor: colors.cardBackground,
+  },
+  badgeText: {
+    color: "#FFFFFF",
+    fontSize: 10,
+    fontFamily: font.bold,
+    lineHeight: 13,
+  },
 
   // Period tabs
   tabsRow: {
@@ -466,7 +580,7 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
   },
 
-  // Insight
+  // Insight card
   insightCard: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -663,6 +777,8 @@ const styles = StyleSheet.create({
     lineHeight: 36,
     textAlign: "center",
   },
+
+  // Debug button
   debugButton: {
     backgroundColor: "#0A1172",
     marginHorizontal: spacing.screenPadding,
@@ -670,7 +786,6 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: radius.md,
   },
-
   debugButtonText: {
     color: "#FFFFFF",
     textAlign: "center",
