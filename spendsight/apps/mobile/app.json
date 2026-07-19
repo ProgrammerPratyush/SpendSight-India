@@ -1,37 +1,55 @@
 {
   "expo": {
-    "name": "mobile",
-    "slug": "mobile",
+    "name": "SpendSight",
+    "slug": "spendsight",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
+    "scheme": "spendsight",
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.programmerpratyush.spendsight"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
+      "package": "com.programmerpratyush.spendsight",
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/favicon.png",
+      "backgroundColor": "#ffffff",
+      "themeColor": "#6200ee",
+      "bundler": "metro"
     },
     "plugins": [
       "expo-sqlite",
       "expo-secure-store",
       "expo-font",
       "@react-native-community/datetimepicker",
-      "@sentry/react-native"
-    ]
+      [
+        "@sentry/react-native",
+        {
+          "organization": "your-org-name",
+          "project": "spendsight-mobile"
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "your-eas-project-id-if-using-eas"
+      },
+      "environment": "production"
+    }
   }
 }
