@@ -7,9 +7,6 @@ const User = require('../models/User');
 
 const logger = require('../utils/logger');
 
-// ✅ Added: Import notification service
-const notificationService = require('../services/notificationService');
-
 // ─────────────────────────────────────────
 // HELPER: Format paise → ₹ readable string
 // ─────────────────────────────────────────
@@ -64,6 +61,29 @@ function resolveCategoryName(raw) {
     return map[raw.toLowerCase()] || raw;
 }
 
+// ─────────────────────────────────────────────────────
+// HELPER: Map category string → emoji icon
+// ─────────────────────────────────────────────────────
+function resolveCategoryIcon(raw) {
+    if (!raw) return '💰';
+
+    const map = {
+        food_dining: '🍽️',
+        food: '🍽️',
+        shopping: '🛒',
+        travel: '✈️',
+        utilities: '💡',
+        entertainment: '🎬',
+        health: '🏥',
+        groceries: '🛍️',
+        subscriptions: '📦',
+        transfers: '🔁',
+        other: '💰',
+    };
+
+    return map[raw.toLowerCase()] || '💰';
+}
+
 // ─────────────────────────────────────────
 // CORE: Generate all insights for one user
 // ─────────────────────────────────────────
@@ -100,33 +120,25 @@ async function generateInsightsForUser(userId) {
             });
 
             if (!existing) {
-                const insight = await Insight.create({
+                await Insight.create({
                     userId,
                     type: 'daily_digest',
+
+                    // ✅ Change #3: Corrected metadata
                     title: 'Daily Summary',
                     icon: '📊',
                     severity: 'info',
+
                     text: `You spent ${formatRupees(todaySpend)} today across ${todayTransactions.length} transaction${todayTransactions.length > 1 ? 's' : ''}.`,
+
                     data: {
                         totalSpend: todaySpend,
                         transactionCount: todayTransactions.length,
                     },
+
                     period: {
                         start: startOfToday,
                         end: now,
-                    },
-                });
-
-                // ✅ Notification: Daily Digest
-                await notificationService.createNotification({
-                    userId,
-                    title: 'Daily Digest',
-                    body: insight.text,
-                    type: 'daily_digest',
-                    severity: 'info',
-                    deepLink: '/insights',
-                    metadata: {
-                        insightId: insight._id,
                     },
                 });
 
@@ -134,8 +146,6 @@ async function generateInsightsForUser(userId) {
                 logger.info(`[INSIGHTS] daily_digest created for ${userId}`);
             }
         }
-
-        console.log('[INSIGHTS] Spend:', todaySpend);
     } catch (err) {
         logger.error(`[INSIGHTS] daily_digest failed for ${userId}`, {
             error: err.message,
@@ -196,12 +206,16 @@ async function generateInsightsForUser(userId) {
             if (!existing) {
                 const isExceeded = percentUsed >= 100;
 
-                const insight = await Insight.create({
+                await Insight.create({
                     userId,
                     type: 'limit_alert',
+
+                    // ✅ Change #3: Unified to 'Budget Warning' always
+                    // severity escalates to 'danger' only when exceeded
                     title: 'Budget Warning',
                     icon: '⚠️',
                     severity: isExceeded ? 'danger' : 'warning',
+
                     text:
                         isExceeded
                             ? `You have exceeded your monthly budget by ${formatRupees(monthSpend - limit)}.`
@@ -288,37 +302,29 @@ async function generateInsightsForUser(userId) {
                 if (!existingTrend) {
                     const isUp = changePercent > 0;
 
-                    const insight = await Insight.create({
+                    await Insight.create({
                         userId,
                         type: 'trend',
+
+                        // ✅ Change #3: Exact titles and icons as specified
                         title: isUp ? 'Spending Increased' : 'Spending Reduced',
                         icon: isUp ? '📈' : '✅',
                         severity: isUp ? 'warning' : 'success',
+
                         text:
                             isUp
                                 ? `You have spent ${Math.round(changePercent)}% more this month compared to last month.`
                                 : `Great job. Spending is down ${Math.abs(Math.round(changePercent))}% compared to last month.`,
+
                         data: {
                             currentMonthSpend: monthSpend,
                             previousMonthSpend,
                             changePercent: Math.round(changePercent),
                         },
+
                         period: {
                             start: previousMonthStart,
                             end: now,
-                        },
-                    });
-
-                    // ✅ Notification: Trend
-                    await notificationService.createNotification({
-                        userId,
-                        title: 'Spending Trend',
-                        body: insight.text,
-                        type: 'trend',
-                        severity: 'info',
-                        deepLink: '/analytics',
-                        metadata: {
-                            insightId: insight._id,
                         },
                     });
 
@@ -376,34 +382,28 @@ async function generateInsightsForUser(userId) {
                     const categoryName =
                         resolveCategoryName(topCategoryKey);
 
-                    const insight = await Insight.create({
+                    await Insight.create({
                         userId,
                         type: 'monthly_wrap',
+
+                        // ✅ Change #3: Exact title and icon as specified
+                        // icon is always 🛒 regardless of category
+                        // (overrides dynamic icon from Change #1)
                         title: 'Top Spending Category',
                         icon: '🛒',
                         severity: 'info',
+
                         text: `${categoryName} accounts for ${percentage}% of your spending this month.`,
+
                         data: {
                             categoryName,
                             amount: topAmount,
                             percentage,
                         },
+
                         period: {
                             start: startOfMonth,
                             end: now,
-                        },
-                    });
-
-                    // ✅ Notification: Monthly Wrap
-                    await notificationService.createNotification({
-                        userId,
-                        title: 'Monthly Wrap',
-                        body: insight.text,
-                        type: 'monthly_wrap',
-                        severity: 'success',
-                        deepLink: '/insights',
-                        metadata: {
-                            insightId: insight._id,
                         },
                     });
 
@@ -503,36 +503,28 @@ async function generateInsightsForUser(userId) {
 
                 const isSingle = recurringMerchants.length === 1;
 
-                const insight = await Insight.create({
+                await Insight.create({
                     userId,
                     type: 'recurring_detected',
+
+                    // ✅ Change #3: Exact title and icon as specified
                     title: 'Recurring Expense',
                     icon: '🔁',
                     severity: 'info',
+
                     text:
                         isSingle
                             ? `Recurring expense detected: ${recurringMerchants[0].merchant} costs approximately ${formatRupees(recurringMerchants[0].monthlyCost)} per month.`
                             : `You have ${recurringMerchants.length} recurring expenses totalling approximately ${formatRupees(totalRecurringCost)} per month.`,
+
                     data: {
                         recurringMerchants,
                         totalRecurringCost,
                     },
+
                     period: {
                         start: sixMonthsAgo,
                         end: now,
-                    },
-                });
-
-                // ✅ Notification: Recurring Expense
-                await notificationService.createNotification({
-                    userId,
-                    title: 'Recurring Expense',
-                    body: insight.text,
-                    type: 'recurring_detected',
-                    severity: 'warning',
-                    deepLink: '/transactions',
-                    metadata: {
-                        insightId: insight._id,
                     },
                 });
 
@@ -587,8 +579,7 @@ async function generateInsightsForUser(userId) {
 
             const averageSpend =
                 historicalTxs.reduce(
-                    (sum, tx) => sum + tx.amount,
-                    0
+                    (sum, tx) => sum + tx.amount, 0
                 ) / historicalTxs.length;
 
             if (averageSpend <= 0) continue;
@@ -603,36 +594,28 @@ async function generateInsightsForUser(userId) {
                 });
 
                 if (!existing) {
-                    const insight = await Insight.create({
+                    await Insight.create({
                         userId,
                         type: 'unusual_spend',
+
+                        // ✅ Change #3: Exact title and severity as specified
+                        // Note: severity is 'danger' not 'critical'
                         title: 'Large Purchase Detected',
                         icon: '🚨',
                         severity: 'danger',
+
                         text: `Large spending detected at ${merchant}: ${formatRupees(latestTx.amount)} versus your usual ${formatRupees(averageSpend)}.`,
+
                         data: {
                             merchant,
                             transactionId: latestTx._id.toString(),
                             amount: latestTx.amount,
                             averageSpend: Math.round(averageSpend),
                         },
+
                         period: {
                             start: ninetyDaysAgo,
                             end: now,
-                        },
-                    });
-
-                    // ✅ Notification: Unusual Spend
-                    await notificationService.createNotification({
-                        userId,
-                        title: 'Large Purchase Detected',
-                        body: insight.text,
-                        type: 'unusual_spend',
-                        severity: 'critical',
-                        deepLink: '/transactions',
-                        metadata: {
-                            insightId: insight._id,
-                            transactionId: latestTx._id.toString(),
                         },
                     });
 
