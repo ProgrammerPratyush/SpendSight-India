@@ -37,6 +37,30 @@ const userSchema = new mongoose.Schema({
         type: Date,
         default: null,
     },
+    notificationDevices: [
+        {
+            token: {
+                type: String,
+                required: true,
+            },
+
+            platform: {
+                type: String,
+                enum: ["android", "ios"],
+                required: true,
+            },
+
+            appVersion: {
+                type: String,
+                default: "",
+            },
+
+            lastSeen: {
+                type: Date,
+                default: Date.now,
+            },
+        },
+    ],
 }, { timestamps: true });   // adds createdAt and updatedAt automatically
 
 module.exports = mongoose.model('User', userSchema);

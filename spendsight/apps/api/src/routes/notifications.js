@@ -112,6 +112,136 @@ router.get('/unread-count', async (req, res, next) => {
 });
 
 // ─────────────────────────────────────────────────────
+// POST /api/notifications/register-device
+//
+// Registers or updates a push notification device token
+// for the authenticated user.
+//
+// Payload:
+// {
+//   token:      "ExponentPushToken[xxxxx]",
+//   platform:   "android" | "ios",
+//   appVersion: "1.0.0"
+// }
+//
+// Response:
+// {
+//   data: {
+//     success: true,
+//     message: "Device registered"   OR "Device updated"
+//   }
+// }
+// ─────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────
+// POST /api/notifications/register-device
+// ✅ Now delegates to notificationService.registerDevice()
+// ─────────────────────────────────────────────────────
+router.post('/register-device', async (req, res, next) => {
+    try {
+        const user = await resolveUser(req, res);
+        if (!user) return;
+
+        const { token, platform, appVersion } = req.body;
+
+        // ── Validate ──
+        if (!token || typeof token !== 'string' || !token.trim()) {
+            return res.status(400).json({
+                error: 'token is required and must be a string.',
+            });
+        }
+
+        if (!platform || !['android', 'ios'].includes(platform)) {
+            return res.status(400).json({
+                error: 'platform must be "android" or "ios".',
+            });
+        }
+
+        // ✅ Delegate to service — route never touches user.notificationDevices
+        const result = await notificationService.registerDevice(
+            user._id,
+            { token, platform, appVersion }
+        );
+
+        if (!result.success) {
+            return res.status(400).json({ error: result.message });
+        }
+
+        res.json({ data: result });
+    } catch (err) {
+        logger.error('[DEVICES] register-device route failed', {
+            error: err.message,
+        });
+        next(err);
+    }
+});
+
+// ─────────────────────────────────────────────────────
+// POST /api/notifications/remove-device
+// Removes a specific token (logout, uninstall)
+// ─────────────────────────────────────────────────────
+router.post('/remove-device', async (req, res, next) => {
+    try {
+        const user = await resolveUser(req, res);
+        if (!user) return;
+
+        const { token } = req.body;
+
+        if (!token || typeof token !== 'string' || !token.trim()) {
+            return res.status(400).json({
+                error: 'token is required.',
+            });
+        }
+
+        // ✅ Delegate to service
+        const result = await notificationService.removeDevice(
+            user._id,
+            token
+        );
+
+        if (!result.success) {
+            return res.status(404).json({ error: result.message });
+        }
+
+        res.json({ data: result });
+    } catch (err) {
+        logger.error('[DEVICES] remove-device route failed', {
+            error: err.message,
+        });
+        next(err);
+    }
+});
+
+// ─────────────────────────────────────────────────────
+// GET /api/notifications/devices
+// Returns all registered devices for the user
+// ─────────────────────────────────────────────────────
+router.get('/devices', async (req, res, next) => {
+    try {
+        const user = await resolveUser(req, res);
+        if (!user) return;
+
+        // ✅ Delegate to service
+        const devices = await notificationService.getUserDevices(user._id);
+
+        logger.info(
+            `[DEVICES] Returned ${devices.length} devices for ${user._id}`
+        );
+
+        res.json({
+            data: {
+                devices,
+                count: devices.length,
+            },
+        });
+    } catch (err) {
+        logger.error('[DEVICES] GET /devices route failed', {
+            error: err.message,
+        });
+        next(err);
+    }
+});
+
+// ─────────────────────────────────────────────────────
 // PATCH /api/notifications/:id/read
 // Mark a single notification as read
 //
