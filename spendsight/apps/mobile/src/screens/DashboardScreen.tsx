@@ -77,6 +77,20 @@ export default function DashboardScreen({ navigation }: any) {
     markRead,
   } = useInsights();
 
+  // ✅ Step 8: Unread notifications badge state
+  const [unreadCount, setUnreadCount] = useState<number>(0);
+
+  // Minimal fetchUnreadCount implementation — kept local to avoid adding new hooks
+  const fetchUnreadCount = useCallback(async () => {
+    try {
+      // Placeholder: in future this can call notifications hook or API
+      // For now default to 0 to avoid undefined references
+      setUnreadCount(0);
+    } catch (err) {
+      // noop
+    }
+  }, []);
+
   const [refreshing, setRefreshing] = useState(false);
 
   // ─────────────────────────────────────
