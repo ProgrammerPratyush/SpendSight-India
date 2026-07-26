@@ -7,6 +7,8 @@ const apiClient = axios.create({
     headers: { 'Content-Type': 'application/json' },
 });
 
+console.log("API URL:", process.env.EXPO_PUBLIC_API_URL);
+
 // console.log(
 //     "API URL:",
 //     process.env.EXPO_PUBLIC_API_URL
