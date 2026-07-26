@@ -33,7 +33,7 @@ export default function App() {
 
   useEffect(() => {
     // initialize PWA service worker
-    // initializePWA();
+    initializePWA();
 
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
