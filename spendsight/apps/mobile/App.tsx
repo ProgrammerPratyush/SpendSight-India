@@ -1,4 +1,7 @@
 import React, { useEffect } from "react";
+// initializing pwa service worker
+import { initializePWA } from "./src/pwa";
+
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { onAuthStateChanged } from "firebase/auth";
@@ -29,6 +32,9 @@ export default function App() {
   });
 
   useEffect(() => {
+    // initialize PWA service worker
+    initializePWA();
+
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         try {
