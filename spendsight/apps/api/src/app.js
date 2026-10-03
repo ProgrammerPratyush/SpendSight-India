@@ -17,6 +17,9 @@ const budgetRoutes = require('./routes/budgets');
 const categoryRoutes = require('./routes/categories');
 // Import the notification routes
 const notificationRoutes = require('./routes/notifications');
+// Import the push notification routes
+const pushRoutes = require('./routes/push');
+
 
 // Middleware imports
 const errorHandler = require('./middleware/errorHandler');
@@ -206,6 +209,12 @@ app.use(
     "/api/notifications",
     authMiddleware,
     notificationRoutes
+);
+
+// Push Notification Routes
+app.use(
+    '/api/push',
+    pushRoutes
 );
 //
 // ──────────────────────────────────────────────────────────
